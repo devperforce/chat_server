@@ -141,7 +141,6 @@ int main(int argc, char* argv[]) {
         // 로직 스레드 시작
         while (!network_io_context.stopped()) {
             auto count = logic_io_context.poll();
-            //LOG_INFO("count: {}", count);
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         LOG_INFO("[ChatServer] network_io_context stopped.");

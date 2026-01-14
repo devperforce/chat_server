@@ -13,8 +13,7 @@ class PacketHandler : boost::noncopyable {
 public:
     static constexpr int32_t kMaxPacketId = 5000;
     explicit PacketHandler(utility::ILogger& logger);
-    //~PacketHandler() = default;
-
+    
     bool Register(int32_t packet_id, std::unique_ptr<IHandler> handler);
     const IHandler* GetHandler(int32_t index) const;
 

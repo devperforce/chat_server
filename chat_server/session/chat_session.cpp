@@ -3,7 +3,7 @@
 
 #include "protobuf/generated/chatting.pb.h"
 #include "chat_server/chat_server.h"
-#include "user_detail/user.h"
+#include "chat_server/user_detail/user.h"
 
 namespace dev::chat_server {
 

@@ -3,7 +3,7 @@
 
 #include "protobuf/generated/chatting.pb.h"
 
-namespace rp::chat_server {
+namespace dev::chat_server {
 
 ChatSession::ChatSession(
     boost::asio::io_context& io_context,
@@ -36,4 +36,4 @@ void ChatSession::OnError(const boost::system::error_code& ec) {
 }
 
 
-} // namespace rp::chat_server
+} // namespace dev::chat_server

@@ -7,7 +7,7 @@
 
 #include "protobuf/protobuf_session.h"
 
-namespace rp::chat_server {
+namespace dev::chat_server {
 
 struct UserInfo {
     content::UserUid::Type user_uid;
@@ -34,4 +34,4 @@ private:
     std::unique_ptr<UserInfo> user_info_;
 };
 
-} // namespace rp::chat_server
+} // namespace dev::chat_server
