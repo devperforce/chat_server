@@ -1,0 +1,11 @@
+{
+  "server_info": {
+    "port": 3200,
+    "processor_multiplier": 1
+  },
+  "log_info": {
+    "console_sink_level": 0,
+    "file_sink_level": 2,
+    "max_file_count": 48
+  }
+}

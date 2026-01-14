@@ -1,0 +1,93 @@
+syntax = "proto3";
+import "packet_id.proto";
+
+package chat;
+
+message PingReq {
+	option (type_enum) = kPingReq;
+}
+
+message PingRes {
+	option (type_enum) = kPingRes;
+}
+
+message LoginReq {
+	option (type_enum) = kLoginReq;
+    uint64 user_uid = 1;
+	string nickname = 2;
+}
+
+message LoginRes {
+	option (type_enum) = kLoginRes;
+}
+
+message PetInfo {
+    int32 pet_type = 1;
+    int32 level = 2;
+}
+
+// 채팅
+message ChatMsgInfo {
+    enum AdminType {
+		User = 0;
+		QA = 1;
+        Admin = 2;
+	}
+
+    string msg = 1;
+	int32 weapon_grade = 2;
+    int32 ranking = 3;
+    int32 costume_type = 4;
+    int32 costume_level = 5;
+    AdminType admin_type = 6;
+    PetInfo pet_info = 7;
+}
+
+message NicknameChatMsgInfo {
+    string nickname = 1;
+    ChatMsgInfo msg_info = 2;
+}
+
+message ChatJoinReq {
+    enum Language {
+		kKorean = 0;
+		kEnglish = 1;
+        kFrench = 2;
+        kDeutsch = 3;
+        kJapanese = 4;
+        kThai = 5;
+        kChinesesSimple = 6;
+        kChinesesTraditional = 7;
+	}
+	option (type_enum) = kChatJoinReq;
+    Language language = 1;
+}
+
+message ChatJoinRes {
+	option (type_enum) = kChatJoinRes;
+	enum Result {
+		kSuccess = 0;
+		kError = 1;
+	}
+	Result result = 1;
+    int32 room_id = 2;
+}
+
+message ChatBroadcastReq {
+	option (type_enum) = kChatBroadcastReq;
+	ChatMsgInfo chat_msg_info = 1;
+}
+
+message ChatBroadcastNoti {
+	option (type_enum) = kChatBroadcastNoti;
+	NicknameChatMsgInfo nickname_msg_info = 1;
+}
+
+message ChatHistoryReq {
+	option (type_enum) = kChatHistoryReq;
+}
+
+message ChatHistoryRes {
+	option (type_enum) = kChatHistoryRes;
+	repeated NicknameChatMsgInfo nickname_msg_infos = 1;
+}

@@ -1,0 +1,33 @@
+syntax = "proto3";
+import "google/protobuf/descriptor.proto";
+
+enum PacketId {
+	// 로비
+	kLoginReq = 0x0000;
+	kLoginRes = 0x0001;
+
+	// 커넥션 체크
+	kPingReq = 0x0200;
+	kPingRes = 0x0201;
+
+	// 채팅
+	kChatJoinReq = 0x400;
+	kChatJoinRes = 0x401;
+
+	kChatBroadcastReq = 0x402;
+	kChatBroadcastNoti = 0x403;
+
+    kChatHistoryReq = 0x404;
+	kChatHistoryRes = 0x405;
+
+    kAllUserAdminMsgNoti = 0x406;
+
+	kAllUserKickNoti = 0x408;
+    kSpecificUserKickNoti = 0x409;
+
+    kCompleteItemNoti = 0x420;
+}
+
+extend google.protobuf.MessageOptions {
+	optional PacketId type_enum = 50000;
+}
