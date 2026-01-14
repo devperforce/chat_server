@@ -4,7 +4,8 @@
 
 `chat_server`는 C++ 기반 **TCP 네트워크 채팅 서버** 프로젝트입니다.  
 Windows 환경, Visual Studio와 CMake를 사용해 빌드 및 실행이 가능하며, 네트워크 소켓을 이용해 여러 클라이언트 간 메시지를 송수신할 수 있는 서버 프로젝트입니다.
-
+> 이 프로젝트는 Boost.Asio 기반 TCP 채팅 서버의 구조를 보여주기 위한 샘플입니다.  
+> Windows Service 등록/운영과 같은 실제 서비스 환경 구성은 다루지 않습니다.
 ---
 
 ## 📂 파일 구조 및 설명
@@ -47,6 +48,17 @@ chat_server/
 ```powershell
 git clone https://github.com/devperforce/chat_server.git
 cd chat_server
+```
 
-### 2. 솔루션 시작
-![generate_sln](./build_dependency/generate_vs2022.png)
+### 2. vcpkg 설치
+```
+PowerShell 관리자 권한 실행
+Set-ExecutionPolicy Unrestricted
+build_dependency/setup_vcpkg.ps1
+```
+
+### 3. 솔루션 시작
+```
+build/server_all.sln
+```
+![generate_sln](https://raw.githubusercontent.com/devperforce/chat_server/main/build_dependency/generate_vs2022.png)
