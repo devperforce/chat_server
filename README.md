@@ -47,3 +47,6 @@ chat_server/
 ```powershell
 git clone https://github.com/devperforce/chat_server.git
 cd chat_server
+
+### 2. 솔루션 시작
+![generate_sln](./build_dependency/generate_vs2022.png)
