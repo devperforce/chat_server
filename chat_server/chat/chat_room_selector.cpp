@@ -49,9 +49,9 @@ ChatRoom* MaxCapacitySelector::GetChatRoom() {
         return nullptr;
     }
 
-    chat_rooms_.emplace_back(std::make_unique<ChatRoom>(io_executor(), static_cast<int32_t>(std::ssize(chat_rooms_))));
-    ChatRoom* last_chat = chat_rooms_.back().get();
-    return last_chat;
+    const auto room_index = static_cast<int32_t>(chat_rooms_.size());
+    chat_rooms_.emplace_back(std::make_unique<ChatRoom>(io_executor(), room_index));
+    return chat_rooms_.back().get();
 }
 
 bool MaxCapacitySelector::IsAvailable(const ChatRoom& chat_room) const {

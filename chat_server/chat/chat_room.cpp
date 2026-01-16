@@ -19,27 +19,29 @@ ChatRoom::ChatRoom(
 
 static std::shared_ptr<chat::ChatBroadcastNoti> CreateBroadcastNoti(
     std::string&& nickname,
-    std::shared_ptr<const chat::ChatBroadcastReq> req
+    const chat::ChatBroadcastReq& req
 ) {
     auto noti = std::make_shared<chat::ChatBroadcastNoti>();
-    auto nickname_msg_info = noti->mutable_nickname_msg_info();
+    auto* nickname_msg_info = noti->mutable_nickname_msg_info();
    
-    nickname_msg_info->set_nickname(nickname);
-    nickname_msg_info->mutable_msg_info()->CopyFrom(req->chat_msg_info());
+    nickname_msg_info->set_nickname(std::move(nickname));
+    nickname_msg_info->mutable_msg_info()->CopyFrom(req.chat_msg_info());
     return noti;
 }
 
 void ChatRoom::Broadcast(std::string nickname, std::shared_ptr<const chat::ChatBroadcastReq> chat_broadcast_req) {
     BOOST_ASSERT(TestSynchronize());
 
-    const auto noti = CreateBroadcastNoti(std::move(nickname), chat_broadcast_req);
+    const auto noti = CreateBroadcastNoti(std::move(nickname), *chat_broadcast_req);
 
     // 히스토리 저장
     nickname_msg_infos_.push_back(noti->nickname_msg_info());
     utility::LOG_INFO("[ChatRoom] Broadcast. nickname_msg_infos size: {}", std::ssize(nickname_msg_infos_));
 
-    for (std::shared_ptr<User> user : users_ | std::ranges::views::values) {
-        user->Send(noti);
+    for (const auto& user : users_ | std::ranges::views::values) {
+        if (user != nullptr) {
+            user->Send(noti);
+        }
     }
 }
 
@@ -47,10 +49,7 @@ void ChatRoom::Join(std::shared_ptr<User> user) {
     BOOST_ASSERT(TestSynchronize());
 
     const auto user_uid = user->user_uid();
-    if (users_.contains(user_uid)) {
-        users_.erase(user_uid);
-    }
-    users_.emplace(user->user_uid(), user);
+    users_.insert_or_assign(user_uid, user);
 
     utility::LOG_INFO("[ChatRoom] Join. user_count: {}", std::ssize(users_));
 
@@ -61,11 +60,10 @@ void ChatRoom::Leave(const User* user) {
     BOOST_ASSERT(TestSynchronize());
 
     const auto user_uid = user->user_uid();
-    if (users_.contains(user_uid)) {
-        if (users_.at(user_uid).get() == user) {
-            users_.erase(user_uid);
-            utility::LOG_INFO("[ChatRoom] Leave. users size: {}", std::ssize(users_));
-        }
+    const auto it = users_.find(user_uid);
+    if (it != users_.end() && it->second.get() == user) {
+        users_.erase(it);
+        utility::LOG_INFO("[ChatRoom] Leave. users size: {}", std::ssize(users_));
     }
 }
 

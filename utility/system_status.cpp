@@ -22,7 +22,7 @@ bool PortInUse(boost::asio::ip::port_type port) {
         return ec == boost::asio::error::address_in_use;
     }
 
-    return false; // port is free
+    return false;
 }
 
 } // namespace dev::utility
