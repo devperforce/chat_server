@@ -107,10 +107,6 @@
       "version": "1.86.0"
     },
     {
-      "name": "boost-thread",
-      "version": "1.86.0"
-    },
-    {
       "name": "boost-math",
       "version": "1.86.0"
     },

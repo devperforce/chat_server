@@ -52,12 +52,15 @@ cd chat_server
 
 ### 2. vcpkg 설치
 ```
-PowerShell 관리자 권한 실행
-Set-ExecutionPolicy Unrestricted
-build_dependency/setup_vcpkg.ps1
+build_dependency/setup_vcpkg.bat
 ```
 
-### 3. 솔루션 시작
+### 3. 솔루션 생성
+```
+generate_vs2022.sln
+```
+
+### 4. 솔루션 시작
 ```
 build/server_all.sln
 ```
