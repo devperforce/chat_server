@@ -49,6 +49,7 @@ chat_server/
 git clone https://github.com/devperforce/chat_server.git
 cd chat_server
 ```
+<span style="opacity: 0.8;">경로를 한글 없이 영어로 설정 부탁드립니다.</span>
 
 ### 2. vcpkg 설치
 ```
