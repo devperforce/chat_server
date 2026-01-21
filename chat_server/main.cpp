@@ -32,7 +32,7 @@
 #include <boost/endian/conversion.hpp>
 #include <boost/system/error_code.hpp>
 #include <boost/mysql/static_results.hpp>
-
+#include <boost/describe/class.hpp>
 using namespace dev;
 
 static bool LoadConfig() {
@@ -74,41 +74,31 @@ static bool RegisterHandler(network::PacketHandler& packet_handler) {
     }
     return true;
 }
-// 헬퍼 함수: 컬럼 이름으로 인덱스를 찾음
-std::size_t get_idx(const boost::mysql::results& result, std::string_view name) {
-    auto meta = result.meta();
-    for (std::size_t i = 0; i < meta.size(); ++i) {
-        auto n = meta[i].column_name();
-        if (meta[i].column_name() == name) {
-            return i;
-        }
-    }
-    // 컬럼을 못 찾았을 경우 예외 처리
-    throw std::runtime_error("Column not found: " + std::string(name));
-}
 
 struct User {
     uint64_t user_uid;
     std::string nickname;
 };
+BOOST_DESCRIBE_STRUCT(User, (), (user_uid, nickname))
+
 using boost::asio::awaitable;
 using boost::asio::use_awaitable;
-boost::asio::awaitable<void> Test(boost::mysql::connection_pool& pool)
+boost::asio::awaitable<User> Test(boost::mysql::connection_pool& pool)
 {
     // 1. 풀에서 연결 객체를 빌려옵니다 (pooled_connection).
     // 이 객체는 범위를 벗어나면 자동으로 풀로 반환됩니다.
     boost::mysql::pooled_connection conn = co_await pool.async_get_connection(use_awaitable);
 
     // 2. 실행할 쿼리와 데이터를 준비합니다.
-    boost::mysql::results result;
+    boost::mysql::static_results<User> result;
 
     // 3. 쿼리 실행 (예: 특정 ID의 유저 이름 조회)
     // conn.operator*()를 통해 실제 connection 객체에 접근합니다.
 
     uint64_t user_uid = 51;
-    std::string tag = "[CheckStat] combat_point: 396318887155, ";
+    //std::string tag = "[CheckStat] combat_point: 396318887155, ";
     co_await conn->async_execute(
-        boost::mysql::with_params("INSERT INTO tracking_play_data (user_uid, tag) VALUES({}, {})", user_uid, tag),
+        boost::mysql::with_params("SELECT * FROM user WHERE user_uid = {}", user_uid),
         result,
         use_awaitable
     );
@@ -116,12 +106,13 @@ boost::asio::awaitable<void> Test(boost::mysql::connection_pool& pool)
     std::cout <<"1"<<std::endl;
     LOG_DEBUG("called Test");
     // 4. 결과 처리
-    /*
-    if (!result.rows().empty()) {
-        std::cout << "Query Result: " << result.rows().at(0).at(0) << std::endl;
-    }
-    */
     
+    User u{};
+    if (result.has_value()) {
+        u = result.rows()[0]; // 첫 번째 행을 User 객체로 바로 가져옴
+    }
+
+    co_return u;
 }
 
 
@@ -224,12 +215,29 @@ int main(int argc, char* argv[]) {
 
     for (int32_t index = 0; index < 10000; ++index) {
         boost::asio::co_spawn(
+            db_connection_pool.get_executor(),
+            [&db_connection_pool] { return Test(db_connection_pool); },
+            // 세 번째 인자에 User를 인자로 받는 람다를 넣습니다.
+            [](std::exception_ptr e, User user) {
+                if (!e) {
+                    LOG_INFO("user_uid: {}", user.user_uid);
+                    // 여기서 user 객체 사용
+                    // 예: 공유 컨테이너에 담거나 로그 출력
+                }
+            }
+        );
+
+        // 받은 데이터 사용
+        //ProcessUser(user);
+        /*
+        boost::asio::co_spawn(
             db_connection_pool.get_executor(), 
             [ &db_connection_pool ] {
                 return Test(db_connection_pool);
             }, 
             boost::asio::detached
         );
+        */
     }
 
     std::vector<std::thread> threads;
