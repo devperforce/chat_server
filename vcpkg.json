@@ -41,6 +41,9 @@
     {
       "name": "boost-json"
     },
+    { 
+      "name": "boost-mysql" 
+    },
     {
       "name": "protobuf"
     },
@@ -113,6 +116,10 @@
     {
       "name": "boost-json",
       "version": "1.86.0"
+    },
+    { 
+      "name": "boost-mysql", 
+      "version": "1.86.0" 
     },
     {
       "name": "protobuf",

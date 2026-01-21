@@ -60,6 +60,8 @@ set(PROJECT_LIBRARIES
             utility
             network
             protobuf
+            OpenSSL::Crypto
+            OpenSSL::SSL
 )
 
 if(UNIX)

@@ -92,9 +92,12 @@ find_package(spdlog CONFIG REQUIRED)
 #target_link_libraries(main PRIVATE TBB::tbb TBB::tbbmalloc)
 
 # boost
-set (BOOST_MIN_VERSION "1.82.0")
-find_package(Boost ${BOOST_MIN_VERSION} REQUIRED thread date_time regex filesystem json)
+set (BOOST_MIN_VERSION "1.86.0")
+find_package(Boost ${BOOST_MIN_VERSION} REQUIRED thread date_time regex filesystem json charconv)
 message(STATUS "BOOST PATH: ${Boost_INCLUDE_DIRS}")
+
+# openssl
+find_package(OpenSSL REQUIRED)
 
 # iguana 가져오기
 FetchContent_Declare(
@@ -141,7 +144,7 @@ if(MSVC)
         $<$<CONFIG:Release>:/WX>
         $<$<CONFIG:Release>:/GL>
     )
-
+    add_compile_options(/bigobj)
     file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/.editorconfig DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 elseif (UNIX)
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")

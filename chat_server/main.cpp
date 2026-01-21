@@ -4,12 +4,16 @@
 #include "utility/file/file_loader.h"
 #include "utility/log/static_logger.h"
 #include "utility/system_status.h"
+#include "utility/string/string_converter.h"
 #include "utility/log.h"
 #include "chat_server/configs/server_setting.h"
 #include "chat_server/chat_server.h"
 #include "chat_server/chat/chat_room_selector.h"
 #include "chat_server/chat/chat_handler.h"
 #include "chat_server/user_detail/user_handler.h"
+
+#include <boost/mysql.hpp>
+#include <boost/describe.hpp>
 
 using namespace dev;
 
@@ -52,6 +56,25 @@ static bool RegisterHandler(network::PacketHandler& packet_handler) {
     }
     return true;
 }
+// 헬퍼 함수: 컬럼 이름으로 인덱스를 찾음
+std::size_t get_idx(const boost::mysql::results& result, std::string_view name) {
+    auto meta = result.meta();
+    for (std::size_t i = 0; i < meta.size(); ++i) {
+        auto n = meta[i].column_name();
+        if (meta[i].column_name() == name) {
+            return i;
+        }
+    }
+    // 컬럼을 못 찾았을 경우 예외 처리
+    throw std::runtime_error("Column not found: " + std::string(name));
+}
+
+struct User {
+    uint64_t user_uid;
+    std::string nickname;
+};
+
+BOOST_DESCRIBE_STRUCT(User, (), (user_uid, nickname))
 
 int main(int argc, char* argv[]) {
     // 필요한 경우 UTF-8 문자열 처리
@@ -59,7 +82,7 @@ int main(int argc, char* argv[]) {
     static const std::wstring kServerName = L"ChatServer";
     setlocale(LC_ALL, "");
     setlocale(LC_NUMERIC, "");
-      // 현재 폴더로 지정
+    // 현재 폴더로 지정
     utility::Path::SetCurrentPath(utility::Path::GetExeFileName());
 
     if (ERROR_SUCCESS != utility::ExceptionHandler::Start(
@@ -102,14 +125,14 @@ int main(int argc, char* argv[]) {
     boost::asio::signal_set signals(network_io_context, SIGINT, SIGTERM);
     signals.async_wait(
         [&](boost::system::error_code const&, int) {
-            network_io_context.stop();
+        network_io_context.stop();
     });
 
     // 채팅 서버 네트워크 설정
     const auto server_endpoint
         = boost::asio::ip::tcp::endpoint(boost::asio::ip::address::from_string("0.0.0.0"), chat_server::ServerConfig::server_setting().server_info.port);
     auto packet_handler = std::make_unique<network::PacketHandler>(*logger);
-    chat_server::ChatServer::NetworkDependency network_dependency {
+    chat_server::ChatServer::NetworkDependency network_dependency{
         .io_context = network_io_context,
         .endpoint = server_endpoint,
         .logger = *logger,
@@ -134,7 +157,63 @@ int main(int argc, char* argv[]) {
 
     LOG_INFO("[ChatServer] Start. thread_count: {}", network_thread_count);
 
+    using namespace boost;
+
+    mysql::pool_params params{
+        .username = "",
+        .password = "",
+        .database = "",
+    };
+    params.server_address.emplace_host_and_port("");
+    
+
+    boost::asio::thread_pool db_thread_pool(4);
+
+    mysql::connection_pool pool(db_thread_pool, std::move(params));
+    pool.async_run(asio::detached);
+
+
+    try {
+        pool.async_get_connection(
+            [&](boost::system::error_code ec, mysql::pooled_connection conn) {
+            if (ec) {
+                std::cerr << "connection error: " << ec.message() << "\n";
+                return;
+            }
+
+            boost::mysql::static_results<User> result;  // 일반 results가 아님!
+            
+            auto stmt = conn->prepare_statement(
+                "SELECT * FROM user WHERE user_uid = ?"
+            );
+            conn->execute(stmt.bind(10), result);
+
+
+            for (const User& user : result.rows()) {
+                    
+                //std::cout << user.user_uid << ", " << user.nickname<< std::endl;
+                //const std::wstring utf16_nickname = utility::StringConvert::Utf8ToUtf16(user.nickname);
+                LOG_INFO("user_uid: {}, nickname : {}", user.user_uid, user.nickname);
+                //int d = 20;
+            }
+
+        });
+
+    }
+    catch (const mysql::error_with_diagnostics& e) {
+        LOG_ERROR("mysql::error_with_diagnostics: {}", e.what());
+    }
+    catch (const std::exception& e) {
+        LOG_ERROR("exception: {}", e.what());
+    }
+
     std::vector<std::thread> threads;
+
+    // 반드시 필요
+    threads.emplace_back([&] {
+        LOG_INFO("[DB Thread pool] Start thread.");
+        db_thread_pool.join();
+    });
 
     threads.emplace_back([&logic_io_context, &network_io_context] {
         LOG_INFO("[ChatServer] Start logic_thread.");
