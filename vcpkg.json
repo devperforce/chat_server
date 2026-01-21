@@ -63,63 +63,63 @@
       "name": "fmt"
     }
   ],
-  "builtin-baseline": "4e08971f3ddc13018ca858a692efe92d3b6b9fce",
+  "builtin-baseline": "eee239bd6f808cb9265e462c475f3a64b17a7ea3",
   "overrides": [
     {
       "name": "boost-asio",
-      "version": "1.86.0"
+      "version": "1.90.0"
     },
     {
       "name": "boost-beast",
-      "version": "1.86.0"
+      "version": "1.90.0"
     },
     {
       "name": "boost-circular-buffer",
-      "version": "1.86.0"
+      "version": "1.90.0"
     },
     {
       "name": "boost-core",
-      "version": "1.86.0"
+      "version": "1.90.0"
     },
     {
       "name": "boost-date-time",
-      "version": "1.86.0"
+      "version": "1.90.0"
     },
     {
       "name": "boost-stacktrace",
-      "version": "1.86.0"
+      "version": "1.90.0"
     },
     {
       "name": "boost-filesystem",
-      "version": "1.86.0"
+      "version": "1.90.0"
     },
     {
       "name": "boost-iostreams",
-      "version": "1.86.0"
+      "version": "1.90.0"
     },
     {
       "name": "boost-lexical-cast",
-      "version": "1.86.0"
+      "version": "1.90.0"
     },
     {
       "name": "boost-locale",
-      "version": "1.86.0"
+      "version": "1.90.0"
     },
     {
       "name": "boost-property-tree",
-      "version": "1.86.0"
+      "version": "1.90.0"
     },
     {
       "name": "boost-math",
-      "version": "1.86.0"
+      "version": "1.90.0"
     },
     {
       "name": "boost-json",
-      "version": "1.86.0"
+      "version": "1.90.0"
     },
     { 
       "name": "boost-mysql", 
-      "version": "1.86.0" 
+      "version": "1.90.0" 
     },
     {
       "name": "protobuf",

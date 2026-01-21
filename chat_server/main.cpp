@@ -12,8 +12,26 @@
 #include "chat_server/chat/chat_handler.h"
 #include "chat_server/user_detail/user_handler.h"
 
-#include <boost/mysql.hpp>
-#include <boost/describe.hpp>
+#include <boost/mysql/connection_pool.hpp>
+#include <boost/mysql/error_with_diagnostics.hpp>
+#include <boost/mysql/pool_params.hpp>
+#include <boost/mysql/static_results.hpp>
+#include <boost/mysql/with_params.hpp>
+
+#include <boost/asio/awaitable.hpp>
+#include <boost/asio/buffer.hpp>
+#include <boost/asio/cancel_after.hpp>
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/read.hpp>
+#include <boost/asio/signal_set.hpp>
+#include <boost/asio/this_coro.hpp>
+#include <boost/asio/write.hpp>
+#include <boost/endian/conversion.hpp>
+#include <boost/system/error_code.hpp>
+#include <boost/mysql/static_results.hpp>
 
 using namespace dev;
 
@@ -73,8 +91,39 @@ struct User {
     uint64_t user_uid;
     std::string nickname;
 };
+using boost::asio::awaitable;
+using boost::asio::use_awaitable;
+boost::asio::awaitable<void> Test(boost::mysql::connection_pool& pool)
+{
+    // 1. 풀에서 연결 객체를 빌려옵니다 (pooled_connection).
+    // 이 객체는 범위를 벗어나면 자동으로 풀로 반환됩니다.
+    boost::mysql::pooled_connection conn = co_await pool.async_get_connection(use_awaitable);
 
-BOOST_DESCRIBE_STRUCT(User, (), (user_uid, nickname))
+    // 2. 실행할 쿼리와 데이터를 준비합니다.
+    boost::mysql::results result;
+
+    // 3. 쿼리 실행 (예: 특정 ID의 유저 이름 조회)
+    // conn.operator*()를 통해 실제 connection 객체에 접근합니다.
+
+    uint64_t user_uid = 51;
+    std::string tag = "[CheckStat] combat_point: 396318887155, ";
+    co_await conn->async_execute(
+        boost::mysql::with_params("INSERT INTO tracking_play_data (user_uid, tag) VALUES({}, {})", user_uid, tag),
+        result,
+        use_awaitable
+    );
+
+    std::cout <<"1"<<std::endl;
+    LOG_DEBUG("called Test");
+    // 4. 결과 처리
+    /*
+    if (!result.rows().empty()) {
+        std::cout << "Query Result: " << result.rows().at(0).at(0) << std::endl;
+    }
+    */
+    
+}
+
 
 int main(int argc, char* argv[]) {
     // 필요한 경우 UTF-8 문자열 처리
@@ -130,7 +179,7 @@ int main(int argc, char* argv[]) {
 
     // 채팅 서버 네트워크 설정
     const auto server_endpoint
-        = boost::asio::ip::tcp::endpoint(boost::asio::ip::address::from_string("0.0.0.0"), chat_server::ServerConfig::server_setting().server_info.port);
+        = boost::asio::ip::tcp::endpoint(boost::asio::ip::make_address("0.0.0.0"), chat_server::ServerConfig::server_setting().server_info.port);
     auto packet_handler = std::make_unique<network::PacketHandler>(*logger);
     chat_server::ChatServer::NetworkDependency network_dependency{
         .io_context = network_io_context,
@@ -163,57 +212,30 @@ int main(int argc, char* argv[]) {
         .username = "",
         .password = "",
         .database = "",
+        .thread_safe = true
     };
     params.server_address.emplace_host_and_port("");
-    
 
     boost::asio::thread_pool db_thread_pool(4);
 
-    mysql::connection_pool pool(db_thread_pool, std::move(params));
-    pool.async_run(asio::detached);
+    mysql::connection_pool db_connection_pool(db_thread_pool, std::move(params));
+    db_connection_pool.async_run(asio::detached);
 
 
-    try {
-        pool.async_get_connection(
-            [&](boost::system::error_code ec, mysql::pooled_connection conn) {
-            if (ec) {
-                std::cerr << "connection error: " << ec.message() << "\n";
-                return;
-            }
-
-            boost::mysql::static_results<User> result;  // 일반 results가 아님!
-            
-            auto stmt = conn->prepare_statement(
-                "SELECT * FROM user WHERE user_uid = ?"
-            );
-            conn->execute(stmt.bind(10), result);
-
-
-            for (const User& user : result.rows()) {
-                    
-                //std::cout << user.user_uid << ", " << user.nickname<< std::endl;
-                //const std::wstring utf16_nickname = utility::StringConvert::Utf8ToUtf16(user.nickname);
-                LOG_INFO("user_uid: {}, nickname : {}", user.user_uid, user.nickname);
-                //int d = 20;
-            }
-
-        });
-
-    }
-    catch (const mysql::error_with_diagnostics& e) {
-        LOG_ERROR("mysql::error_with_diagnostics: {}", e.what());
-    }
-    catch (const std::exception& e) {
-        LOG_ERROR("exception: {}", e.what());
+    for (int32_t index = 0; index < 10000; ++index) {
+        boost::asio::co_spawn(
+            db_connection_pool.get_executor(), 
+            [ &db_connection_pool ] {
+                return Test(db_connection_pool);
+            }, 
+            boost::asio::detached
+        );
     }
 
     std::vector<std::thread> threads;
 
     // 반드시 필요
-    threads.emplace_back([&] {
-        LOG_INFO("[DB Thread pool] Start thread.");
-        db_thread_pool.join();
-    });
+   
 
     threads.emplace_back([&logic_io_context, &network_io_context] {
         LOG_INFO("[ChatServer] Start logic_thread.");
@@ -241,7 +263,8 @@ int main(int argc, char* argv[]) {
     for (auto& thread : threads) {
         thread.join();
     }
-
+    db_thread_pool.stop();
+    db_thread_pool.join(); // 여기서 DB 풀 스레드들을 정리합니다
     LOG_INFO("[ChatServer] End");
     return EXIT_SUCCESS;
 }

@@ -92,7 +92,7 @@ find_package(spdlog CONFIG REQUIRED)
 #target_link_libraries(main PRIVATE TBB::tbb TBB::tbbmalloc)
 
 # boost
-set (BOOST_MIN_VERSION "1.86.0")
+set (BOOST_MIN_VERSION "1.90.0")
 find_package(Boost ${BOOST_MIN_VERSION} REQUIRED thread date_time regex filesystem json charconv)
 message(STATUS "BOOST PATH: ${Boost_INCLUDE_DIRS}")
 
@@ -121,7 +121,6 @@ include_directories(
 
 if(MSVC)
     add_definitions(-DUNICODE -D_UNICODE)
-
     add_compile_options($<$<C_COMPILER_ID:MSVC>:/utf-8>)
     add_compile_options($<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 

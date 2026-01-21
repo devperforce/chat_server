@@ -69,10 +69,10 @@ void ChatSession::SendPing() {
 
     auto refresh_ping_time = std::chrono::system_clock::now();
 
-    ping_timer_.expires_from_now(kWaitDuration);
+    ping_timer_.expires_after(kWaitDuration);
     ping_timer_.async_wait([this, self = shared_from_this(), start_time = refresh_ping_time](const boost::system::error_code& ec) {
         BOOST_ASSERT(TestSynchronize());
-        if (ec || boost::asio::steady_timer::clock_type::now() < ping_timer_.expires_at()) {
+        if (ec || boost::asio::steady_timer::clock_type::now() < ping_timer_.expiry()) {
             logger_.LogDebug("[ChatSession] ping timer cancel!, debug_unique_id: {}", debug_unique_id_);
             return;
         }
