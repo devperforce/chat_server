@@ -6,8 +6,10 @@ namespace dev::chat_server {
 
 ChatServer::ChatServer(
     const NetworkDependency& network_dependency,
+    std::shared_ptr<boost::mysql::connection_pool> db_conn_pool,
     ChatRoomSelector& chat_room_selector)
     : Server(network_dependency.io_context, network_dependency.endpoint, network_dependency.logger, network_dependency.packet_handler),
+    db_conn_pool_(db_conn_pool),
     chat_room_selector_(chat_room_selector) {
 }
 
@@ -22,6 +24,10 @@ void ChatServer::OnError(const boost::system::error_code& ec) {
 
 ChatRoomSelector& ChatServer::chat_room_selector() const {
     return chat_room_selector_;
+}
+
+std::shared_ptr<boost::mysql::connection_pool> ChatServer::db_conn_pool() const {
+    return db_conn_pool_;
 }
 
 } // namespace dev::chat_server

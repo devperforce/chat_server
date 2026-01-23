@@ -1,5 +1,7 @@
 #pragma once
 
+#include <boost/mysql/connection_pool.hpp>
+
 #include "network/server.h"
 #include "network/handler/packet_handler.h"
 #include "chat_server/session/chat_session.h"
@@ -18,10 +20,12 @@ public:
     };
     ChatServer(
         const NetworkDependency& network_dependency,
+        std::shared_ptr<boost::mysql::connection_pool> db_conn_pool_,
         ChatRoomSelector& chat_room_selector
     );
 
     ChatRoomSelector& chat_room_selector() const;
+    std::shared_ptr<boost::mysql::connection_pool> db_conn_pool() const;
 
 private:
     void OnAccepted(boost::asio::ip::tcp::socket&& socket) override;
@@ -32,6 +36,8 @@ private:
     boost::asio::any_io_executor logic_executor_;
 
     ChatRoomSelector& chat_room_selector_;
+
+    std::shared_ptr<boost::mysql::connection_pool> db_conn_pool_;
 };
 
 } // namespace dev::chat_server
