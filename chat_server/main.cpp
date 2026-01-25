@@ -54,20 +54,60 @@ static bool RegisterHandler(network::PacketHandler& packet_handler) {
     return true;
 }
 
-std::shared_ptr<boost::mysql::connection_pool> CreateDBConnectionPool(
+static std::shared_ptr<boost::mysql::connection_pool> CreateDBConnectionPool(
     boost::asio::thread_pool& db_thread_pool,
-    const chat_server::ServerSetting& server_setting
+    const chat_server::SqlInfo& sql_info
 ) {
     boost::mysql::pool_params params{
-        .username = "",
-        .password = "",
-        .database = "",
+        .username = sql_info.username,
+        .password = sql_info.password,
+        .database = sql_info.database,
         .thread_safe = true
     };
-    params.server_address.emplace_host_and_port("");
+    params.server_address.emplace_host_and_port(sql_info.host, sql_info.port);
     auto db_connection_pool = std::make_shared<boost::mysql::connection_pool>(db_thread_pool, std::move(params));
     BOOST_ASSERT(db_connection_pool != nullptr);
     return db_connection_pool;
+}
+
+using namespace boost;
+
+static asio::awaitable<bool> TestQuery(mysql::connection_pool& db_conn_pool) {
+    try {
+        // 1. 커넥션 획득 대기 (async_run이 돌고 있어야 성공함)
+        auto conn = co_await db_conn_pool.async_get_connection(asio::use_awaitable);
+
+        // 2. 간단한 쿼리 실행
+        mysql::results res;
+        co_await conn->async_execute("SELECT 1", res, asio::use_awaitable);
+
+        co_return true; // 성공
+    } catch (const std::exception& e) {
+        std::cerr << "[DB Check Error] " << e.what() << std::endl;
+        co_return false; // 실패
+    }
+}
+
+static bool CheckDbConnection(
+    boost::mysql::connection_pool& db_conn_pool,
+    std::chrono::steady_clock::duration wait_time = std::chrono::seconds(5)) {
+    
+    std::future<bool> conn_future = asio::co_spawn(
+        db_conn_pool.get_executor(), 
+        TestQuery(db_conn_pool), 
+        asio::use_future
+    );
+    
+    auto db_conn_status = conn_future.wait_for(wait_time);
+    if (db_conn_status == std::future_status::timeout) {
+        return false;
+    }
+
+    if (!conn_future.get()) { 
+        return false;
+    }
+
+    return true;
 }
 
 int main(int argc, char* argv[]) {
@@ -116,8 +156,12 @@ int main(int argc, char* argv[]) {
     boost::asio::io_context logic_io_context;
     boost::asio::thread_pool db_thread_pool(4);
 
-    auto db_conn_pool = CreateDBConnectionPool(db_thread_pool, server_setting);
+    auto db_conn_pool = CreateDBConnectionPool(db_thread_pool, server_setting.sql_info);
     db_conn_pool->async_run(boost::asio::detached);
+    if (!CheckDbConnection(*db_conn_pool)) {
+        LOG_ERROR("[Server] Fail to connect to database.");
+        return EXIT_FAILURE;
+    }
 
     // 종료 등록
     boost::asio::signal_set signals(network_io_context, SIGINT, SIGTERM);
@@ -126,6 +170,7 @@ int main(int argc, char* argv[]) {
         network_io_context.stop();
     });
 
+    
     // 채팅 서버 네트워크 설정
     const auto server_endpoint
         = boost::asio::ip::tcp::endpoint(boost::asio::ip::make_address("0.0.0.0"), chat_server::ServerConfig::server_setting().server_info.port);

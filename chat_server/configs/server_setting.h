@@ -17,11 +17,21 @@ struct LogInfo {
 };
 REFLECTION(LogInfo, console_sink_level, file_sink_level, max_file_count)
 
+struct SqlInfo {
+    std::string username;
+    std::string password;
+    std::string database;
+    std::string host;
+    uint16_t port = 0;
+};
+REFLECTION(SqlInfo, username, password, database, host, port)
+
 struct ServerSetting {
     ServerInfo server_info;
     LogInfo log_info;
+    SqlInfo sql_info;
 };
-REFLECTION(ServerSetting, server_info, log_info)
+REFLECTION(ServerSetting, server_info, log_info, sql_info)
 
 class ServerConfig {
 public:

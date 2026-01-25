@@ -7,5 +7,12 @@
     "console_sink_level": 0,
     "file_sink_level": 2,
     "max_file_count": 48
+  },
+  "sql_info": {
+    "username": "",
+    "password": "",
+    "database": "",
+    "host": "",
+    "port": 3306
   }
 }

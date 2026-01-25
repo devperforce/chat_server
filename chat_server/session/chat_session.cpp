@@ -134,29 +134,32 @@ void ChatSession::SendPing() {
         }
 
         auto db_conn_pool = chat_server_.db_conn_pool();
+        
         EXECUTE_QUERY<DBUser>(
-        *db_conn_pool,
-        [] {
-            std::vector<int> target_uids = {10, 11, 12};
+            *db_conn_pool,
+            [] {
+            std::vector<int> target_uids = { 10, 11, 12 };
             return mysql::with_params("SELECT user_uid, nickname FROM user WHERE user_uid IN ({})", target_uids);
         },
-        [&, self = shared_from_this(), start_time](const auto&& rows) {
+            [&, self = shared_from_this(), start_time](const auto&& rows) {
             if (rows.empty()) {
                 return;
             }
             for (const auto& user : rows) {
-                const auto user_uid = user.user_uid; 
+                const auto user_uid = user.user_uid;
                 const std::u16string utf16_nickname = boost::locale::conv::utf_to_utf<char16_t>(user.nickname);
                 //std::string utf8_nickname = boost::locale::conv::utf_to_utf<char>(utf16_nickname);
                 self->logger().LogInfo("Found user: {} ({})", user.nickname, user_uid);
             }
 
             SendPing();
-        }, 
-        [self = shared_from_this()](const std::exception& e) {
+        },
+            [self = shared_from_this()](const std::exception& e) {
             self->logger().LogError("[ChatSession] Fail to execute query. exception: {}", e.what());
             self->Close();
         });
+        
+
     });
 
     last_ping_time_ = refresh_ping_time;
