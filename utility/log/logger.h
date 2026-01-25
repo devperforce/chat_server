@@ -2,7 +2,6 @@
 
 #include <boost/core/noncopyable.hpp>
 #include <fmt/format.h>
-#include <string_view>
 
 namespace dev::utility {
 

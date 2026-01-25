@@ -9,12 +9,6 @@
 namespace mysql = boost::mysql;
 namespace asio = boost::asio;
 
-enum class ErrorMsg {
-    kLogicalError,
-    kNotAffected,
-    kException
-};
-
 template <typename ResultType, typename QueryFunc, typename OnSuccess, typename OnError>
 void EXECUTE_QUERY(
     mysql::connection_pool& pool,

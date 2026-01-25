@@ -25,6 +25,13 @@ spdlog::logger* StaticLogger::GetLogger() {
 }
 
 bool StaticLogger::Initialize() {
+#ifdef _WIN32
+    // 콘솔 출력 인코딩을 UTF-8로 설정
+    SetConsoleOutputCP(65001);
+    // (선택 사항) 입력 인코딩도 UTF-8로 설정
+    SetConsoleCP(65001);
+#endif
+
     static const char* console_pattern = "%^[%H:%M:%S:%e %z][%l][%t]%$ %v";
     const auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
     //console_sink->set_color(spdlog::level::info, console_sink->WHITE);
