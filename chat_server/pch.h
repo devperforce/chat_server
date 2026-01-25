@@ -4,6 +4,8 @@
 #include <string>
 #include <locale>
 #include <ranges>
+#include <string>
+#include <expected>
 
 #include <boost/system/error_code.hpp>
 #include <boost/asio.hpp>

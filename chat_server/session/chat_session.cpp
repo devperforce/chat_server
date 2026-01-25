@@ -4,6 +4,7 @@
 #include "protobuf/generated/chatting.pb.h"
 #include "chat_server/chat_server.h"
 #include "chat_server/user_detail/user.h"
+#include "database/sql/query_executor.h"
 
 namespace dev::chat_server {
 
@@ -112,30 +113,6 @@ boost::asio::awaitable<void> Test2(const utility::ILogger& logger, std::shared_p
     logger.LogDebug("called Test2");
 }
 
-#include <expected>
-#include <string>
-
-boost::asio::awaitable<std::expected<DBUser, std::string>> Test(const utility::ILogger& logger, std::shared_ptr<boost::mysql::connection_pool> db_conn_pool) {
-    auto conn = co_await db_conn_pool->async_get_connection(boost::asio::use_awaitable);
-    boost::mysql::static_results<DBUser> result;
-
-    uint64_t user_uid = 51;
-
-    co_await conn->async_execute(
-        boost::mysql::with_params("SELECT * FROM user WHERE user_uid = {}", user_uid),
-        result,
-        boost::asio::use_awaitable
-    );
-
-    logger.LogDebug("called Test");
-
-    DBUser u{};
-    if (result.has_value()) {
-        u = result.rows()[0]; // 첫 번째 행을 User 객체로 바로 가져옴
-    }
-
-    co_return u;
-}
 
 void ChatSession::SendPing() {
     static constexpr auto kWaitDuration = std::chrono::seconds(10);
@@ -161,52 +138,55 @@ void ChatSession::SendPing() {
 
     auto db_conn_pool = chat_server_.db_conn_pool();
 
-    auto self = shared_from_this();
-
-    boost::asio::co_spawn(
-        db_conn_pool->get_executor(),
-        [db_conn_pool, self] -> boost::asio::awaitable<void> {
-            return Test2(self->logger(), db_conn_pool);
-        },
-        [&, self](std::exception_ptr e) {
-            if (e) {
-                try {
-                    std::rethrow_exception(e);
-                } catch (const std::exception& ex) {
-                    self->logger().LogError("Coroutine finished with exception: {}", ex.what());
-                }
-            } else {
-                last_ping_time_ = refresh_ping_time;            
-                const auto req = std::make_shared<chat::PingReq>();
-                Send(req);
-                self->logger().LogDebug("Coroutine finished successfully");
-            }
+   
+    EXECUTE_QUERY<DBUser>(
+    *db_conn_pool,
+    [] {
+        std::vector<int> target_uids = {10, 11, 12};
+        return mysql::with_params("SELECT user_uid, username FROM user WHERE user_uid IN ({})", target_uids);
+    },
+    [](auto&& rows) {
+        if (rows.empty()) {
+            return;
         }
+        for (const auto& user : rows) {
+            // user.username 접근 가능
+        }
+    }, 
+    [](const std::exception& e) {
+        
+    }
     );
-
-
     /*
-    boost::asio::co_spawn(
-        db_conn_pool->get_executor(),
-        [db_conn_pool, self] {
-            return Test(self->logger(), db_conn_pool);
-        },
-        [&, self, last_ping_time = refresh_ping_time](std::exception_ptr e, DBUser user) {
-            if (e) {
-                try {
-                    std::rethrow_exception(e);
-                } catch (const std::exception& ex) {
-                    // 이제 정확한 에러 원인(ex.what())을 볼 수 있습니다.
-                    self->logger().LogError("[ChatSession] DB error: {}", ex.what());
-                }
-                self->Close();
-                return;
+    EXECUTE_QUERY(
+        *db_conn_pool,
+        [user_uid = 10](mysql::pooled_connection& conn) -> asio::awaitable<std::expected<std::vector<DBUser>, ErrorMsg>> {
+
+            mysql::static_results<DBUser> result;
+
+            std::vector<int> target_uids = {10, 11, 12};
+
+            co_await conn->async_execute(
+                mysql::with_params("SELECT user_uid, username FROM user WHERE user_uid IN ({})", target_uids),
+                result,
+                asio::use_awaitable
+            );
+
+            if (!result.rows().empty()) {
+                // static_results의 rows()는 뷰(View)이므로 벡터로 복사해서 리턴
+                std::vector<DBUser> users(result.rows().begin(), result.rows().end());
+                co_return users; 
             }
 
-            logger_.LogDebug("[ChatSession] DBTest. user_uid: {}", user.user_uid);
-            last_ping_time_ = refresh_ping_time;            
-            const auto req = std::make_shared<chat::PingReq>();
-            Send(req);
+            co_return std::unexpected(ErrorMsg::kLogicalError); 
+        },
+        [](std::expected<std::vector<DBUser>, ErrorMsg> result) {
+            if (result.has_value()) {
+                // 구조체 필드 접근
+                //std::cout << "User Found: " << result->nickname << " (UID: " << result->user_uid << ")\n";
+            } else {
+                //std::cerr << "Query Failed: " << result.error() << "\n";
+            }
         }
     );
     */

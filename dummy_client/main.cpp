@@ -25,10 +25,10 @@ int main(int argc, char* argv[]) {
     }
 
     const auto client_endpoint
-        = boost::asio::ip::tcp::endpoint(boost::asio::ip::address::from_string("127.0.0.1"), 3200);
+        = boost::asio::ip::tcp::endpoint(boost::asio::ip::make_address("127.0.0.1"), 3200);
 
     std::vector<std::shared_ptr<dummy_client::DummySession>> dummy_sessions;
-    for (int32_t index = 0; index < 1; ++index) {
+    for (int32_t index = 0; index < 100; ++index) {
         boost::asio::ip::tcp::socket socket(io_context);
         auto session =
             std::make_shared<dummy_client::DummySession>(io_context, std::move(socket), *logger, *packet_handler);

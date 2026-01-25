@@ -31,6 +31,7 @@ set(TARGET_HEADERS
     chat/chat_room.h
     chat/chat_room_selector.h
     chat/chat_handler.h
+    database/sql/query_executor.h
     chat_server.h
     pch.h
 )
