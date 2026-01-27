@@ -4,30 +4,34 @@
 #include <spdlog/spdlog.h>
 #include <utility/iguana/json_reader.hpp>
 
-#include "system/singleton.h"
+#include "database/config/sql_info.h"
+
+namespace dev::database {
+REFLECTION(SqlInfo, username, password, database, host, port, thread_pool_count)
+} //namespace dev::database
 
 namespace dev::chat_server {
 
-class ServerConfigRepository : public system::Singleton<ServerConfigRepository> {
-public:
-    ServerSetting server_setting;
-};
+REFLECTION(ServerInfo, port, processor_multiplier)
+REFLECTION(LogInfo, console_sink_level, file_sink_level, max_file_count)
+
+REFLECTION(ServerSetting, server_info, log_info, sql_info)
+
+static ServerSetting setting;
 
 bool ServerConfig::Load(const std::string& setting_json) {
     std::error_code ec;
 
-    ServerSetting server_setting;
-    iguana::from_json(server_setting, setting_json, ec);
+    iguana::from_json(setting, setting_json, ec);
     if (ec) {
         SPDLOG_ERROR("[ServerConfig] Unable to load. error message: {}", ec.message());
         return false;
     }
-    ServerConfigRepository::GetInstance().server_setting = std::move(server_setting);
     return true;
 }
 
 const ServerSetting& ServerConfig::server_setting() {
-    return ServerConfigRepository::GetInstance().server_setting;
+    return setting;
 }
 
 } // namespace dev::chat_server

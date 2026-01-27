@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "chat_server/session/chat_session.h"
 
+#include "database_service.h"
 #include "protobuf/generated/chatting.pb.h"
 #include "chat_server/chat_server.h"
 #include "chat_server/user_detail/user.h"
@@ -133,10 +134,8 @@ void ChatSession::SendPing() {
             return;
         }
 
-        auto db_conn_pool = chat_server_.db_conn_pool();
-        
         EXECUTE_QUERY<DBUser>(
-            *db_conn_pool,
+            chat_server_.database_service().connection_pool(),
             [] {
             std::vector<int> target_uids = { 10, 11, 12 };
             return mysql::with_params("SELECT user_uid, nickname FROM user WHERE user_uid IN ({})", target_uids);
@@ -158,46 +157,11 @@ void ChatSession::SendPing() {
             self->logger().LogError("[ChatSession] Fail to execute query. exception: {}", e.what());
             self->Close();
         });
-        
-
     });
 
     last_ping_time_ = refresh_ping_time;
     const auto req = std::make_shared<chat::PingReq>();
     Send(req);
-    /*
-    EXECUTE_QUERY(
-        *db_conn_pool,
-        [user_uid = 10](mysql::pooled_connection& conn) -> asio::awaitable<std::expected<std::vector<DBUser>, ErrorMsg>> {
-
-            mysql::static_results<DBUser> result;
-
-            std::vector<int> target_uids = {10, 11, 12};
-
-            co_await conn->async_execute(
-                mysql::with_params("SELECT user_uid, username FROM user WHERE user_uid IN ({})", target_uids),
-                result,
-                asio::use_awaitable
-            );
-
-            if (!result.rows().empty()) {
-                // static_results의 rows()는 뷰(View)이므로 벡터로 복사해서 리턴
-                std::vector<DBUser> users(result.rows().begin(), result.rows().end());
-                co_return users; 
-            }
-
-            co_return std::unexpected(ErrorMsg::kLogicalError); 
-        },
-        [](std::expected<std::vector<DBUser>, ErrorMsg> result) {
-            if (result.has_value()) {
-                // 구조체 필드 접근
-                //std::cout << "User Found: " << result->nickname << " (UID: " << result->user_uid << ")\n";
-            } else {
-                //std::cerr << "Query Failed: " << result.error() << "\n";
-            }
-        }
-    );
-    */
 }
 
 } // namespace dev::chat_server

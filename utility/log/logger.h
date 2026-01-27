@@ -15,7 +15,7 @@ enum class LogLevel : int32_t {
     kOff
 };
 
-class ILogger : boost::noncopyable {
+class ILogger {
 public:
     virtual ~ILogger() = default;
 

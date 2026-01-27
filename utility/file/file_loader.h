@@ -6,7 +6,7 @@ namespace dev::utility {
 
 class FileLoader : boost::noncopyable {
 public:
-    explicit FileLoader(const std::string& path);
+    explicit FileLoader(std::string_view path);
 
     std::string ReadFileToString() const;
 

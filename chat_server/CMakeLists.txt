@@ -9,6 +9,7 @@ endif()
 
 set(TARGET_SOURCES
     configs/server_setting.cpp
+    configs/config_loader.cpp
     session/chat_session.cpp
     user_detail/user.cpp
     user_detail/user_repository.cpp
@@ -16,6 +17,8 @@ set(TARGET_SOURCES
     chat/chat_room.cpp
     chat/chat_room_selector.cpp
     chat/chat_handler.cpp
+    handler/packet_handler_registry.cpp
+    startup_validator.cpp
     chat_server.cpp
     main.cpp
     pch.cpp
@@ -23,6 +26,7 @@ set(TARGET_SOURCES
 
 set(TARGET_HEADERS
     configs/server_setting.h
+    configs/config_loader.h
     content/content_type.h
     session/chat_session.h
     user_detail/user.h
@@ -32,6 +36,8 @@ set(TARGET_HEADERS
     chat/chat_room_selector.h
     chat/chat_handler.h
     database/sql/query_executor.h
+    handler/packet_handler_registry.h
+    startup_validator.h
     chat_server.h
     pch.h
 )
@@ -61,6 +67,7 @@ set(PROJECT_LIBRARIES
             utility
             network
             protobuf
+            database
             OpenSSL::Crypto
             OpenSSL::SSL
 )

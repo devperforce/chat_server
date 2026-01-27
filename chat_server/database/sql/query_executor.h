@@ -1,7 +1,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
-#include <expected> // C++23 필요 (또는 <boost/outcome.hpp> 등으로 대체 가능)
+#include <expected>
 #include <boost/mysql.hpp>
 #include <boost/asio.hpp>
 #include <boost/describe.hpp> // 구조체 매핑용

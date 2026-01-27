@@ -1,38 +1,42 @@
 #include "pch.h"
+#include "startup_validator.h"
 #include "utility/file/path.h"
 #include "utility/exception/exception_handler.h"
-#include "utility/file/file_loader.h"
 #include "utility/log/static_logger.h"
-#include "utility/system_status.h"
-
 #include "utility/log.h"
 #include "chat_server/configs/server_setting.h"
 #include "chat_server/chat_server.h"
 #include "chat_server/chat/chat_room_selector.h"
-#include "chat_server/chat/chat_handler.h"
-#include "chat_server/user_detail/user_handler.h"
+#include "configs/config_loader.h"
+
+#include "database/database_service.h"
+#include "handler/packet_handler_registry.h"
 
 using namespace dev;
+using namespace chat_server;
 
-static bool LoadConfig() {
-    try {
-        const std::string server_setting_json = utility::FileLoader("config/server_setting.json").ReadFileToString();
-        if (!chat_server::ServerConfig::Load(server_setting_json)) {
-            return false;
-        }
-        SPDLOG_INFO("[Server] port: {}, processor_multiplier: {}",
-            chat_server::ServerConfig::server_setting().server_info.port,
-            chat_server::ServerConfig::server_setting().server_info.processor_multiplier);
-    } catch (const std::runtime_error& e) {
-        SPDLOG_ERROR("LoadConfig exception: {}", e.what());
+static bool InitializeEnvironment() {
+    setlocale(LC_ALL, "");
+    setlocale(LC_NUMERIC, "");
+    utility::Path::SetCurrentPath(utility::Path::GetExeFileName());
+
+    static const std::wstring kServerName = L"ChatServer";
+    if (ERROR_SUCCESS != utility::ExceptionHandler::Start(
+        kServerName,
+        static_cast<MINIDUMP_TYPE>(
+            MiniDumpWithPrivateReadWriteMemory |
+            MiniDumpWithDataSegs |
+            MiniDumpWithFullMemoryInfo |
+            MiniDumpWithThreadInfo))) {
+        SPDLOG_ERROR("[ChatServer] Fail to start exception handler.");
         return false;
     }
     return true;
 }
 
 static std::unique_ptr<utility::ILogger> CreateLogger(
-    const utility::StaticLogger::LogLevelInfo& log_level_info,
-    const chat_server::ServerSetting& server_setting
+    const ServerSetting& server_setting,
+    const utility::StaticLogger::LogLevelInfo& log_level_info
 ) {
     std::unique_ptr<utility::ILogger> logger
         = std::make_unique<utility::StaticLogger>("log/app.log", log_level_info, server_setting.log_info.max_file_count);
@@ -42,124 +46,80 @@ static std::unique_ptr<utility::ILogger> CreateLogger(
     return logger;
 }
 
-static bool RegisterHandler(network::PacketHandler& packet_handler) {
-    // 유저 핸들러 등록
-    if (!chat_server::UserHandler::Register(packet_handler)) {
-        return false;
-    }
-    // 채팅 핸들러 등록
-    if (!chat_server::ChatHandler::Register(packet_handler)) {
-        return false;
-    }
-    return true;
-}
-
-static std::shared_ptr<boost::mysql::connection_pool> CreateDBConnectionPool(
-    boost::asio::thread_pool& db_thread_pool,
-    const chat_server::SqlInfo& sql_info
+static void RunLogicThread(
+    std::vector<std::thread>& threads,
+    boost::asio::io_context& logic_io_context,
+    boost::asio::io_context& network_io_context
 ) {
-    boost::mysql::pool_params params{
-        .username = sql_info.username,
-        .password = sql_info.password,
-        .database = sql_info.database,
-        .thread_safe = true
-    };
-    params.server_address.emplace_host_and_port(sql_info.host, sql_info.port);
-    auto db_connection_pool = std::make_shared<boost::mysql::connection_pool>(db_thread_pool, std::move(params));
-    BOOST_ASSERT(db_connection_pool != nullptr);
-    return db_connection_pool;
+    threads.emplace_back([&logic_io_context, &network_io_context] {
+        LOG_INFO("[ChatServer] Start logic_thread.");
+        // 로직 스레드 시작
+        while (!network_io_context.stopped()) {
+            auto count = logic_io_context.poll();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        LOG_INFO("[ChatServer] network_io_context stopped.");
+
+        // 로직 스레드 종료 대기
+        while (logic_io_context.poll() > 0) {
+        }
+        LOG_INFO("[ChatServer] logic_io_context Stopped.");
+        logic_io_context.stop();
+    });
+
 }
 
-using namespace boost;
-
-static asio::awaitable<bool> TestQuery(mysql::connection_pool& db_conn_pool) {
-    try {
-        // 1. 커넥션 획득 대기 (async_run이 돌고 있어야 성공함)
-        auto conn = co_await db_conn_pool.async_get_connection(asio::use_awaitable);
-
-        // 2. 간단한 쿼리 실행
-        mysql::results res;
-        co_await conn->async_execute("SELECT 1", res, asio::use_awaitable);
-
-        co_return true; // 성공
-    } catch (const std::exception& e) {
-        std::cerr << "[DB Check Error] " << e.what() << std::endl;
-        co_return false; // 실패
+static void RunNetworkThreads(
+    std::vector<std::thread>& threads,
+    boost::asio::io_context& network_io_context,
+    int32_t run_thread_count
+) {
+    //const int32_t network_thread_count = std::thread::hardware_concurrency();
+    LOG_INFO("[ChatServer] Start. network_thread_count: {}", run_thread_count);
+    for (size_t index = 0; index < run_thread_count; ++index) {
+        threads.emplace_back([&network_io_context] {
+            network_io_context.run();
+        });
     }
-}
-
-static bool CheckDbConnection(
-    boost::mysql::connection_pool& db_conn_pool,
-    std::chrono::steady_clock::duration wait_time = std::chrono::seconds(5)) {
-    
-    std::future<bool> conn_future = asio::co_spawn(
-        db_conn_pool.get_executor(), 
-        TestQuery(db_conn_pool), 
-        asio::use_future
-    );
-    
-    auto db_conn_status = conn_future.wait_for(wait_time);
-    if (db_conn_status == std::future_status::timeout) {
-        return false;
-    }
-
-    if (!conn_future.get()) { 
-        return false;
-    }
-
-    return true;
+    network_io_context.run();
 }
 
 int main(int argc, char* argv[]) {
-    // 필요한 경우 UTF-8 문자열 처리
-    //std::locale::global(std::locale(""));
-    static const std::wstring kServerName = L"ChatServer";
-    setlocale(LC_ALL, "");
-    setlocale(LC_NUMERIC, "");
-    // 현재 폴더로 지정
-    utility::Path::SetCurrentPath(utility::Path::GetExeFileName());
-
-    if (ERROR_SUCCESS != utility::ExceptionHandler::Start(
-        kServerName,
-        static_cast<MINIDUMP_TYPE>(
-            MiniDumpWithPrivateReadWriteMemory |
-            MiniDumpWithDataSegs |
-            MiniDumpWithFullMemoryInfo |
-            MiniDumpWithThreadInfo))) {
-        SPDLOG_ERROR("[Server] Fail to start exception handler.");
+    // 환경 설정
+    if (!InitializeEnvironment()) {
+        SPDLOG_ERROR("[ChatServer] Fail to load InitializeEnvironment.");
         return EXIT_FAILURE;
     }
 
-    if (!LoadConfig()) {
-        SPDLOG_ERROR("[Server] Fail to load config.");
+    // 설정 파일 로드
+    if (!ConfigLoader::LoadServerSetting("config/server_setting.json")) {
+        SPDLOG_ERROR("[ChatServer] Fail to load config.");
         return EXIT_FAILURE;
     }
 
-    const auto& server_setting = chat_server::ServerConfig::server_setting();
+    // 로거 생성
+    const auto& server_setting = ServerConfig::server_setting();
+    auto logger = CreateLogger(
+        server_setting,
+        {
+            .console_level = spdlog::level::level_enum::trace,
+            .file_level = spdlog::level::level_enum::trace
+        });
 
-    const utility::StaticLogger::LogLevelInfo level_info{
-       .console_level = spdlog::level::level_enum::trace,
-       .file_level = spdlog::level::level_enum::trace
-    };
-    const std::unique_ptr<utility::ILogger> logger = CreateLogger(level_info, server_setting);
-    if (logger == nullptr) {
-        SPDLOG_ERROR("[Server] Fail to create logger.");
-        return EXIT_FAILURE;
-    }
-
-    if (utility::PortInUse(server_setting.server_info.port)) {
-        LOG_ERROR("[Server] Port already in use. port: {}", server_setting.server_info.port);
-        return EXIT_FAILURE;
-    }
-
+    boost::asio::thread_pool db_thread_pool(server_setting.sql_info.thread_pool_count);
     boost::asio::io_context network_io_context;
     boost::asio::io_context logic_io_context;
-    boost::asio::thread_pool db_thread_pool(4);
 
-    auto db_conn_pool = CreateDBConnectionPool(db_thread_pool, server_setting.sql_info);
-    db_conn_pool->async_run(boost::asio::detached);
-    if (!CheckDbConnection(*db_conn_pool)) {
-        LOG_ERROR("[Server] Fail to connect to database.");
+    // 데이터베이스 서비스 시작
+    auto db_service = std::make_unique<database::DatabaseService>(*logger, db_thread_pool, server_setting.sql_info);
+    if (!db_service->Start()) {
+        LOG_ERROR("[ChatServer] Fail to start db_service.");
+        return EXIT_FAILURE;
+    }
+
+    // 서버 시작 조건 체크
+    if (!StartupValidator(*logger, server_setting, *db_service).Validate()) {
+        LOG_ERROR("[ChatServer] Startup validation failed.");
         return EXIT_FAILURE;
     }
 
@@ -170,66 +130,42 @@ int main(int argc, char* argv[]) {
         network_io_context.stop();
     });
 
-    
-    // 채팅 서버 네트워크 설정
-    const auto server_endpoint
-        = boost::asio::ip::tcp::endpoint(boost::asio::ip::make_address("0.0.0.0"), chat_server::ServerConfig::server_setting().server_info.port);
-    auto packet_handler = std::make_unique<network::PacketHandler>(*logger);
-    chat_server::ChatServer::NetworkDependency network_dependency{
-        .io_context = network_io_context,
-        .endpoint = server_endpoint,
-        .logger = *logger,
-        .packet_handler = *packet_handler
-    };
-
-    // 채팅서버 핸들러 등록
-    if (!RegisterHandler(*packet_handler)) {
+    // 패킷 핸들러 등록
+    auto handler_registry = std::make_unique<PacketHandlerRegistry>(*logger);
+    if (!handler_registry->Initialize()) {
+        LOG_ERROR("[ChatServer] Fail to initialize PacketHandlerRegistry.");
         return EXIT_FAILURE;
     }
 
-    // 채팅 서버 시작
-    auto chat_room_selector = std::make_unique<chat_server::MaxCapacitySelector>(
+    // 네트워크 의존성 설정
+    ChatServer::NetworkDependency network_dependency{
+        .io_context = network_io_context,
+        .endpoint = boost::asio::ip::tcp::endpoint(boost::asio::ip::make_address("0.0.0.0"), ServerConfig::server_setting().server_info.port),
+        .logger = *logger,
+        .packet_handler = handler_registry->packet_handler()
+    };
+
+    // 채팅 서버 정하는 기준 설정
+    auto chat_room_selector = std::make_unique<MaxCapacitySelector>(
         logic_io_context,
-        chat_server::MaxCapacitySelector::Setting{ .max_room_count = 4, .max_capacity_per_room = 5000 }
+        MaxCapacitySelector::Setting{ .max_room_count = 4, .max_capacity_per_room = 5000 }
     );
-    const auto chat_server = std::make_unique<chat_server::ChatServer>(network_dependency, db_conn_pool, *chat_room_selector);
+    // 채팅 서버 시작
+    const auto chat_server = std::make_unique<ChatServer>(network_dependency, *db_service, *chat_room_selector);
     chat_server->Start();
 
-    const int32_t processor_count = std::thread::hardware_concurrency();
-    const int32_t network_thread_count = processor_count;
-
-    LOG_INFO("[ChatServer] Start. thread_count: {}", network_thread_count);
-
+    // I/O 작업 시작
     std::vector<std::thread> threads;
+    RunLogicThread(threads, logic_io_context, network_io_context);
+    RunNetworkThreads(threads, network_io_context, std::thread::hardware_concurrency());
 
-    threads.emplace_back([&logic_io_context, &network_io_context] {
-        LOG_INFO("[ChatServer] Start logic_thread.");
-        // 로직 스레드 시작
-        while (!network_io_context.stopped()) {
-            auto count = logic_io_context.poll();
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-        LOG_INFO("[ChatServer] network_io_context stopped.");
-
-        // network 멈춘 뒤 남은 logic 처리
-        while (logic_io_context.poll() > 0) {
-        }
-        LOG_INFO("[ChatServer] logic_io_context Stopped.");
-        logic_io_context.stop();
-    });
-
-    for (size_t index = 0; index < network_thread_count; ++index) {
-        threads.emplace_back([&network_io_context] {
-            network_io_context.run();
-        });
-    }
-    network_io_context.run();
-
+    // 스레드 조인
     for (auto& thread : threads) {
         thread.join();
     }
-    db_thread_pool.stop();
-    db_thread_pool.join(); // 여기서 DB 풀 스레드들을 정리합니다
+    // DB 서비스 종료
+    db_service->Stop();
+
     LOG_INFO("[ChatServer] End");
     return EXIT_SUCCESS;
 }

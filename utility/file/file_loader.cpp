@@ -5,7 +5,7 @@
 
 namespace dev::utility {
 
-FileLoader::FileLoader(const std::string& path) : path_(path) {
+FileLoader::FileLoader(std::string_view path) : path_(path) {
 
 }
 
