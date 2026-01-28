@@ -19,6 +19,7 @@ set(TARGET_HEADERS
     config/sql_info.h
     connection_validator.h
     database_service.h
+    query_executor.h
     pch.h
 )
 

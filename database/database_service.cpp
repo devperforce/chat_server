@@ -30,6 +30,7 @@ DatabaseService::DatabaseService(
 }
 
 DatabaseService::~DatabaseService() {
+    logger_.LogInfo("~DatabaseService");
 }
 
 bool DatabaseService::Start() {
@@ -47,9 +48,9 @@ void DatabaseService::Stop() {
     logger_.LogInfo("[ChatServer] Database thread pool stopped safely.");
 }
 
-boost::mysql::connection_pool& DatabaseService::connection_pool() const {
+std::shared_ptr<boost::mysql::connection_pool> DatabaseService::connection_pool() const {
     BOOST_ASSERT(connection_pool_ != nullptr);
-    return *connection_pool_;
+    return connection_pool_;
 }
 
 } // namespace dev::database

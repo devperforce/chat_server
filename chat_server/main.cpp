@@ -56,7 +56,9 @@ static void RunLogicThread(
         // 로직 스레드 시작
         while (!network_io_context.stopped()) {
             auto count = logic_io_context.poll();
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            if (count == 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
         }
         LOG_INFO("[ChatServer] network_io_context stopped.");
 
@@ -66,7 +68,6 @@ static void RunLogicThread(
         LOG_INFO("[ChatServer] logic_io_context Stopped.");
         logic_io_context.stop();
     });
-
 }
 
 static void RunNetworkThreads(

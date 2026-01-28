@@ -22,7 +22,7 @@ public:
     bool Start();
     void Stop();
 
-    boost::mysql::connection_pool& connection_pool() const;
+    std::shared_ptr<boost::mysql::connection_pool> connection_pool() const;
 
 private:
     const utility::ILogger& logger_;

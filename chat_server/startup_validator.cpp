@@ -22,21 +22,23 @@ static bool ValidatePort(
 bool StartupValidator::Validate() const {
     auto port_result = ValidatePort(server_setting_);
     if (!port_result) {
-        logger_.LogError("[ChatServer] Port already in use. port: {}", 
+        logger_.LogError("[StartupValidator] Port already in use. port: {}", 
             server_setting_.server_info.port);
         return port_result;
     }
 
+    logger_.LogInfo("[StartupValidator] Starting database connection validation...");
+
     auto db_result = database::ConnectionValidator(logger_).Check(
-        db_service_.connection_pool(),
+        *db_service_.connection_pool(),
         std::chrono::seconds(5)
     );
     if (!db_result) {
-        logger_.LogError("[ChatServer] ", 
-            server_setting_.server_info.port);
+        logger_.LogError("[StartupValidator] Fail to connect database.");
         return db_result;
     }
 
+    logger_.LogInfo("[StartupValidator] Database connection validation completed successfully.");
     return true;
 }
     
