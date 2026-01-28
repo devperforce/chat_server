@@ -61,6 +61,9 @@
     },
     {
       "name": "fmt"
+    },
+    {
+      "name": "entt"
     }
   ],
   "builtin-baseline": "eee239bd6f808cb9265e462c475f3a64b17a7ea3",
@@ -144,6 +147,10 @@
     {
       "name": "fmt",
       "version": "11.0.2"
+    },
+    {
+      "name": "entt",
+      "version": "3.16.0"
     }
   ]
 }

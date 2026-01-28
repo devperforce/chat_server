@@ -3,11 +3,58 @@
 
 #include "database_service.h"
 #include "protobuf/generated/chatting.pb.h"
+#include "database/query.h"
+#include "database/query_executor.h"
 #include "chat_server/chat_server.h"
 #include "chat_server/user_detail/user.h"
-#include "database/query_executor.h"
 
 namespace dev::chat_server {
+
+struct DBUser {
+    uint64_t user_uid;
+    std::string nickname;
+};
+BOOST_DESCRIBE_STRUCT(DBUser, (), (user_uid, nickname))
+
+class GetUserInfoQuery final : public database::QueryAsyncBase {
+public:
+    GetUserInfoQuery(
+        const utility::ILogger& logger,
+        std::shared_ptr<boost::mysql::connection_pool> conn_pool,
+        std::shared_ptr<ChatSession> chat_session
+    ) : QueryAsyncBase(logger, std::move(conn_pool)),
+        chat_session_(std::move(chat_session)) {
+    }
+    ~GetUserInfoQuery() = default;
+
+    boost::asio::awaitable<void> Execute(boost::mysql::pooled_connection& conn) override {
+        boost::mysql::statement stmt = co_await conn->async_prepare_statement(
+            "SELECT * FROM user WHERE user_uid = ?",
+            boost::asio::use_awaitable
+        );
+        boost::mysql::static_results<DBUser> result;
+
+        co_await conn->async_execute(stmt.bind(10), result, boost::asio::use_awaitable);
+
+        for (const auto& row : result.rows()) {
+            logger_.LogInfo("[GetUserInfoQuery] Found user: {} ({})", row.nickname, row.user_uid);
+        }
+
+        CONTROLLER(chat_session_).Post([] (ChatSession& session) {
+            //session.SendPing();
+        });
+
+
+    }
+
+    void OnError(const std::exception& e) const override {
+        logger_.LogError("[GetUserInfoQuery] Fail to execute query. exception: {}", e.what());
+    }
+
+
+private:
+    std::shared_ptr<ChatSession> chat_session_;
+};
 
 ChatSession::ChatSession(
     const ChatServer& chat_server,
@@ -66,12 +113,6 @@ void ChatSession::RecvPing() {
     last_ping_time_ = std::chrono::system_clock::now();
 }
 
-struct DBUser {
-    uint64_t user_uid;
-    std::string nickname;
-};
-BOOST_DESCRIBE_STRUCT(DBUser, (), (user_uid, nickname))
-
 void ChatSession::SendPing() {
     static constexpr auto kWaitDuration = std::chrono::seconds(10);
 
@@ -91,39 +132,56 @@ void ChatSession::SendPing() {
             return;
         }
 
-        database::ExecuteAsync<DBUser>(
+
+        auto user_info_query = std::make_shared<GetUserInfoQuery>(logger_, chat_server_.database_service().connection_pool(), std::static_pointer_cast<ChatSession>(self));
+        database::ExecuteAsync2(user_info_query, [](std::shared_ptr<DBUser>db_user) {
+
+        });
+
+        database::ExecuteAsync2(user_info_query, [](std::shared_ptr<int>db_user) {
+
+        });
+
+        /*
+        database::ExecuteAsync(
             chat_server_.database_service().connection_pool(),
-            [target_uids = std::vector<int>{ 10, 11, 12 }, &logger = logger_] {
+            [&, self = shared_from_this(), target_uids = std::vector<int>{ 10, 11, 12 }, &logger = logger_] (boost::mysql::pooled_connection& conn) -> boost::asio::awaitable<void>{
                 logger.LogDebug("database::ExecuteAsync<DBUser>");
-                return boost::mysql::with_params("SELECT user_uid, nickname FROM user WHERE user_uid IN ({})", target_uids);
-            },
-            [&, self = shared_from_this(), start_time](const auto&& rows) {
-                if (rows.empty()) {
-                    return;
-                }
-                for (const auto& user : rows) {
+
+                boost::mysql::static_results<DBUser> results;
+                co_await conn->async_execute(boost::mysql::with_params("SELECT user_uid, nickname FROM user WHERE user_uid IN ({})", target_uids), results);
+
+                for (const auto& user : results.rows()) {
                     const auto user_uid = user.user_uid;
                     const std::u16string utf16_nickname = boost::locale::conv::utf_to_utf<char16_t>(user.nickname);
                     //std::string utf8_nickname = boost::locale::conv::utf_to_utf<char>(utf16_nickname);
                     self->logger().LogInfo("Found user: {} ({})", user.nickname, user_uid);
                 }
 
-                SendPing();
+               SendPing();
             },
             [self = shared_from_this()](const std::exception& e) {
                 self->logger().LogError("[ChatSession] Fail to execute query. exception: {}", e.what());
                 self->Close();
         });
+        */
     });
 
     std::string tag = "asdasdasdasd";
-    database::JustExecuteAsync(
+    database::ExecuteAsync(
         chat_server_.database_service().connection_pool(),
-        [user_uid = 20, _tag = std::move(tag), &logger = logger_] {
-        logger.LogDebug("database::JustExecuteAsync");
-            return boost::mysql::with_params("INSERT INTO tracking_play_data (user_uid, tag) VALUES ({}, {})", user_uid, _tag);
+        [self = shared_from_this(), tag](boost::mysql::pooled_connection& conn) -> boost::asio::awaitable<void> {
+     
+            boost::mysql::statement stmt = co_await conn->async_prepare_statement(
+                "INSERT INTO tracking_play_data (user_uid, tag) VALUES (?, ?)",
+                boost::asio::use_awaitable
+            );
+            boost::mysql::results result;
+            for (int32_t index = 0; index < 10; ++index) {
+                co_await conn->async_execute(stmt.bind(10, tag), result, boost::asio::use_awaitable);
+            }
         },
-        [self = shared_from_this()](const std::exception& e) {
+            [self = shared_from_this()](const std::exception& e) {
             self->logger().LogError("[ChatSession] Fail to execute query. exception: {}", e.what());
             self->Close();
         }
