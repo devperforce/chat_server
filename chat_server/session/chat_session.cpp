@@ -16,7 +16,7 @@ struct DBUser {
 };
 BOOST_DESCRIBE_STRUCT(DBUser, (), (user_uid, nickname))
 
-class GetUserInfoQuery final : public database::QueryAsyncBase {
+class GetUserInfoQuery final : public database::QueryAsyncBase<DBUser> {
 public:
     GetUserInfoQuery(
         const utility::ILogger& logger,
@@ -27,30 +27,28 @@ public:
     }
     ~GetUserInfoQuery() = default;
 
-    boost::asio::awaitable<void> Execute(boost::mysql::pooled_connection& conn) override {
+    boost::asio::awaitable<ResultType> Execute(boost::mysql::pooled_connection& conn) override {
         boost::mysql::statement stmt = co_await conn->async_prepare_statement(
             "SELECT * FROM user WHERE user_uid = ?",
             boost::asio::use_awaitable
         );
-        boost::mysql::static_results<DBUser> result;
+        boost::mysql::static_results<DBUser> results;
 
-        co_await conn->async_execute(stmt.bind(10), result, boost::asio::use_awaitable);
+        co_await conn->async_execute(stmt.bind(10), results, boost::asio::use_awaitable);
 
-        for (const auto& row : result.rows()) {
-            logger_.LogInfo("[GetUserInfoQuery] Found user: {} ({})", row.nickname, row.user_uid);
+        for (const auto& user : results.rows()) {
+            const auto user_uid = user.user_uid;
+            const std::u16string utf16_nickname = boost::locale::conv::utf_to_utf<char16_t>(user.nickname);
+            //std::string utf8_nickname = boost::locale::conv::utf_to_utf<char>(utf16_nickname);
+            co_return std::make_shared<DBUser>(user_uid, user.nickname);
         }
 
-        CONTROLLER(chat_session_).Post([] (ChatSession& session) {
-            //session.SendPing();
-        });
-
-
+        throw std::runtime_error("User not found");
     }
 
     void OnError(const std::exception& e) const override {
         logger_.LogError("[GetUserInfoQuery] Fail to execute query. exception: {}", e.what());
     }
-
 
 private:
     std::shared_ptr<ChatSession> chat_session_;
@@ -133,15 +131,19 @@ void ChatSession::SendPing() {
         }
 
 
-        auto user_info_query = std::make_shared<GetUserInfoQuery>(logger_, chat_server_.database_service().connection_pool(), std::static_pointer_cast<ChatSession>(self));
-        database::ExecuteAsync2(user_info_query, [](std::shared_ptr<DBUser>db_user) {
+        auto user_info_query = std::make_shared<GetUserInfoQuery>(
+            logger_,
+            chat_server_.database_service().connection_pool(),
+            std::static_pointer_cast<ChatSession>(self)
+        );
 
+        ExecuteAsync(user_info_query, [&, chat_session = std::static_pointer_cast<ChatSession>(self)](GetUserInfoQuery::ResultType db_user) mutable {
+            logger_.LogInfo("[ChatSession] User info retrieved: {} ({})", db_user->nickname, db_user->user_uid);
+            CONTROLLER(chat_session).Post([&](ChatSession& chat_session) {
+                chat_session.SendPing(); 
+            });
         });
-
-        database::ExecuteAsync2(user_info_query, [](std::shared_ptr<int>db_user) {
-
-        });
-
+        
         /*
         database::ExecuteAsync(
             chat_server_.database_service().connection_pool(),

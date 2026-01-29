@@ -2,7 +2,6 @@
 #include <boost/mysql.hpp>
 
 namespace dev::database {
-class QueryAsyncBase;
 
 template <typename ExecuteLogic, typename OnError>
 void ExecuteAsync(
@@ -26,7 +25,5 @@ void ExecuteAsync(
         boost::asio::detached
     );
 }
-
-void ExecuteAsync2(std::shared_ptr<QueryAsyncBase> query);
 
 } // namespace dev::database
