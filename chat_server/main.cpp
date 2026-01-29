@@ -1,25 +1,20 @@
 #include "pch.h"
-#include "startup_validator.h"
-#include "utility/file/path.h"
-#include "utility/exception/exception_handler.h"
-#include "utility/log/static_logger.h"
-#include "utility/log.h"
-#include "chat_server/configs/server_setting.h"
-#include "chat_server/chat_server.h"
-#include "chat_server/chat/chat_room_selector.h"
 #include "configs/config_loader.h"
-
 #include "database/database_service.h"
 #include "handler/packet_handler_registry.h"
+#include "utility/exception/exception_handler.h"
+#include "utility/file/path.h"
+#include "utility/log.h"
+#include "utility/log/static_logger.h"
+#include "chat_server/startup_validator.h"
+#include "chat_server/chat/chat_room_selector.h"
+#include "chat_server/chat_server.h"
+#include "chat_server/configs/server_setting.h"
 
 using namespace dev;
 using namespace chat_server;
 
-static bool InitializeEnvironment() {
-    setlocale(LC_ALL, "");
-    setlocale(LC_NUMERIC, "");
-    utility::Path::SetCurrentPath(utility::Path::GetExeFileName());
-
+static bool InitializeExceptionHandler() {
     static const std::wstring kServerName = L"ChatServer";
     if (ERROR_SUCCESS != utility::ExceptionHandler::Start(
         kServerName,
@@ -86,9 +81,12 @@ static void RunNetworkThreads(
 }
 
 int main(int argc, char* argv[]) {
-    // 환경 설정
-    if (!InitializeEnvironment()) {
-        SPDLOG_ERROR("[ChatServer] Fail to load InitializeEnvironment.");
+    setlocale(LC_ALL, "");
+    setlocale(LC_NUMERIC, "");
+    utility::Path::SetCurrentPath(utility::Path::GetExeFileName());
+    // 예외 핸들러 적용
+    if (!InitializeExceptionHandler()) {
+        SPDLOG_ERROR("[ChatServer] Fail to load InitializeExceptionHandler.");
         return EXIT_FAILURE;
     }
 
@@ -98,7 +96,7 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    // 로거 생성
+    // 로그 생성
     const auto& server_setting = ServerConfig::server_setting();
     auto logger = CreateLogger(
         server_setting,
@@ -111,7 +109,7 @@ int main(int argc, char* argv[]) {
     boost::asio::io_context network_io_context;
     boost::asio::io_context logic_io_context;
 
-    // 데이터베이스 서비스 시작
+    // DB 서비스 시작
     auto db_service = std::make_unique<database::DatabaseService>(*logger, db_thread_pool, server_setting.sql_info);
     if (!db_service->Start()) {
         LOG_ERROR("[ChatServer] Fail to start db_service.");

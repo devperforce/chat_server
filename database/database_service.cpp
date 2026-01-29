@@ -48,6 +48,10 @@ void DatabaseService::Stop() {
     logger_.LogInfo("[ChatServer] Database thread pool stopped safely.");
 }
 
+const utility::ILogger& DatabaseService::logger() const {
+    return logger_;
+}
+
 std::shared_ptr<boost::mysql::connection_pool> DatabaseService::connection_pool() const {
     BOOST_ASSERT(connection_pool_ != nullptr);
     return connection_pool_;

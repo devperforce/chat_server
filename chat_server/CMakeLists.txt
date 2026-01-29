@@ -18,6 +18,7 @@ set(TARGET_SOURCES
     chat/chat_room_selector.cpp
     chat/chat_handler.cpp
     handler/packet_handler_registry.cpp
+    tests/test_query.cpp
     startup_validator.cpp
     chat_server.cpp
     main.cpp
@@ -36,6 +37,7 @@ set(TARGET_HEADERS
     chat/chat_room_selector.h
     chat/chat_handler.h
     handler/packet_handler_registry.h
+    tests/test_query.h
     startup_validator.h
     chat_server.h
     pch.h

@@ -1,10 +1,10 @@
 #include "pch.h"
 #include "chat_server/session/chat_session.h"
 
-#include "database_service.h"
 #include "protobuf/generated/chatting.pb.h"
-#include "database/query.h"
-#include "database/query_executor.h"
+#include "database/database_service.h"
+#include "database/query/query_execution.h"
+#include "database/query/query_async.h"
 #include "chat_server/chat_server.h"
 #include "chat_server/user_detail/user.h"
 
@@ -19,10 +19,9 @@ BOOST_DESCRIBE_STRUCT(DBUser, (), (user_uid, nickname))
 class GetUserInfoQuery final : public database::QueryAsyncBase<DBUser> {
 public:
     GetUserInfoQuery(
-        const utility::ILogger& logger,
-        std::shared_ptr<boost::mysql::connection_pool> conn_pool,
+        const database::IQueryContext& context,
         std::shared_ptr<ChatSession> chat_session
-    ) : QueryAsyncBase(logger, std::move(conn_pool)),
+    ) : QueryAsyncBase(context),
         chat_session_(std::move(chat_session)) {
     }
     ~GetUserInfoQuery() = default;
@@ -132,8 +131,7 @@ void ChatSession::SendPing() {
 
 
         auto user_info_query = std::make_shared<GetUserInfoQuery>(
-            logger_,
-            chat_server_.database_service().connection_pool(),
+            chat_server_.database_service(),
             std::static_pointer_cast<ChatSession>(self)
         );
 
@@ -168,26 +166,6 @@ void ChatSession::SendPing() {
         });
         */
     });
-
-    std::string tag = "asdasdasdasd";
-    database::ExecuteAsync(
-        chat_server_.database_service().connection_pool(),
-        [self = shared_from_this(), tag](boost::mysql::pooled_connection& conn) -> boost::asio::awaitable<void> {
-     
-            boost::mysql::statement stmt = co_await conn->async_prepare_statement(
-                "INSERT INTO tracking_play_data (user_uid, tag) VALUES (?, ?)",
-                boost::asio::use_awaitable
-            );
-            boost::mysql::results result;
-            for (int32_t index = 0; index < 10; ++index) {
-                co_await conn->async_execute(stmt.bind(10, tag), result, boost::asio::use_awaitable);
-            }
-        },
-            [self = shared_from_this()](const std::exception& e) {
-            self->logger().LogError("[ChatSession] Fail to execute query. exception: {}", e.what());
-            self->Close();
-        }
-    );
 
     last_ping_time_ = refresh_ping_time;
     const auto req = std::make_shared<chat::PingReq>();

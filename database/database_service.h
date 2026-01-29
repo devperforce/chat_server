@@ -2,6 +2,8 @@
 
 #include <boost/core/noncopyable.hpp>
 
+#include "database/query/query_context.h"
+
 namespace boost::mysql {
 class connection_pool;
 } // namespace boost::mysql
@@ -14,7 +16,7 @@ namespace dev::database {
 
 struct SqlInfo;
 
-class DatabaseService : boost::noncopyable {
+class DatabaseService final : boost::noncopyable , public IQueryContext {
 public:
     DatabaseService(const utility::ILogger& logger, boost::asio::thread_pool& thread_pool, const SqlInfo& sql_info);
     ~DatabaseService();
@@ -22,7 +24,8 @@ public:
     bool Start();
     void Stop();
 
-    std::shared_ptr<boost::mysql::connection_pool> connection_pool() const;
+    const utility::ILogger& logger() const override; 
+    std::shared_ptr<boost::mysql::connection_pool> connection_pool() const override;
 
 private:
     const utility::ILogger& logger_;

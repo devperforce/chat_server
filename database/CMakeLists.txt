@@ -12,8 +12,6 @@ set(CMAKE_INSTALL_DEFAULT_DIRECTORY_PERMISSIONS
 set(TARGET_SOURCES
     connection_validator.cpp
     database_service.cpp
-    query.cpp
-    query_executor.cpp
     pch.cpp
 )
 
@@ -21,8 +19,9 @@ set(TARGET_HEADERS
     config/sql_info.h
     connection_validator.h
     database_service.h
-    query_executor.h
-    query.h
+    query/query_async.h
+    query/query_context.h
+    query/query_execution.h
     pch.h
 )
 

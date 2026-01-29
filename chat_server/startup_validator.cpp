@@ -3,7 +3,6 @@
 
 #include "database/connection_validator.h"
 #include "utility/system_status.h"
-#include "utility/log.h"
 #include "chat_server/configs/server_setting.h"
 #include "database/database_service.h"
 #include "utility/log/logger.h"
