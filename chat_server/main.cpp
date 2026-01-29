@@ -77,7 +77,6 @@ static void RunNetworkThreads(
             network_io_context.run();
         });
     }
-    network_io_context.run();
 }
 
 int main(int argc, char* argv[]) {

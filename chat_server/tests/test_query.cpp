@@ -12,7 +12,7 @@ TestQuery::TestQuery(database::IQueryContext& query_context)
 }
 
 void TestQuery::CheckPrepareStatement() const {
-
+    /*
     database::ExecuteAsync(
         query_context_.connection_pool(),
         [tag = "test1234"](boost::mysql::pooled_connection& conn) -> boost::asio::awaitable<void> {
@@ -30,6 +30,7 @@ void TestQuery::CheckPrepareStatement() const {
             query_context_.logger().LogError("[TestQuery] Fail to execute prepare statement. exception: {}", e.what());
         }
     );
+    */
 }
 
 } // namespace dev::chat_server

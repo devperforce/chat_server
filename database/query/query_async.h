@@ -40,4 +40,5 @@ protected:
     std::shared_ptr<boost::mysql::connection_pool> conn_pool_;
 };
 
+
 } // namespace dev::database

@@ -114,7 +114,7 @@ void ChatSession::SendPing() {
     static constexpr auto kWaitDuration = std::chrono::seconds(10);
 
     auto refresh_ping_time = std::chrono::system_clock::now();
- 
+
     ping_timer_.expires_after(kWaitDuration);
     ping_timer_.async_wait([this, self = shared_from_this(), start_time = refresh_ping_time](const boost::system::error_code& ec) {
 
@@ -130,46 +130,62 @@ void ChatSession::SendPing() {
         }
 
 
-        auto user_info_query = std::make_shared<GetUserInfoQuery>(
-            chat_server_.database_service(),
-            std::static_pointer_cast<ChatSession>(self)
-        );
-
-        ExecuteAsync(user_info_query, [&, chat_session = std::static_pointer_cast<ChatSession>(self)](GetUserInfoQuery::ResultType db_user) mutable {
-            logger_.LogInfo("[ChatSession] User info retrieved: {} ({})", db_user->nickname, db_user->user_uid);
-            CONTROLLER(chat_session).Post([&](ChatSession& chat_session) {
-                chat_session.SendPing(); 
-            });
-        });
-        
-        /*
-        database::ExecuteAsync(
+        // Example async DB usage with correct callback signature; adjust as needed
+        DBUser a;
+        a.user_uid = 10;
+        database::ExecuteAsync( // <DBUser> 생략 가능!
             chat_server_.database_service().connection_pool(),
-            [&, self = shared_from_this(), target_uids = std::vector<int>{ 10, 11, 12 }, &logger = logger_] (boost::mysql::pooled_connection& conn) -> boost::asio::awaitable<void>{
-                logger.LogDebug("database::ExecuteAsync<DBUser>");
-
-                boost::mysql::static_results<DBUser> results;
-                co_await conn->async_execute(boost::mysql::with_params("SELECT user_uid, nickname FROM user WHERE user_uid IN ({})", target_uids), results);
-
-                for (const auto& user : results.rows()) {
-                    const auto user_uid = user.user_uid;
-                    const std::u16string utf16_nickname = boost::locale::conv::utf_to_utf<char16_t>(user.nickname);
-                    //std::string utf8_nickname = boost::locale::conv::utf_to_utf<char>(utf16_nickname);
-                    self->logger().LogInfo("Found user: {} ({})", user.nickname, user_uid);
+            boost::mysql::with_params("SELECT * FROM user WHERE user_uid = {}", a.user_uid),
+            [this, self = shared_from_this()](boost::system::error_code ec, boost::mysql::static_results<DBUser> results) { // 여기서 타입을 명시
+                if (ec) {
+                    logger_.LogError("error_code: {}", ec.what());
+                    return;
                 }
 
-               SendPing();
-            },
-            [self = shared_from_this()](const std::exception& e) {
-                self->logger().LogError("[ChatSession] Fail to execute query. exception: {}", e.what());
-                self->Close();
-        });
-        */
+                for (const auto& user : results.rows()) {
+                    logger_.LogDebug("User: {} ({})", user.nickname, user.user_uid);
+                }
+
+                SendPing();
+            }
+        );
+
     });
 
     last_ping_time_ = refresh_ping_time;
     const auto req = std::make_shared<chat::PingReq>();
     Send(req);
+
+    database::ExecuteAsync(
+        chat_server_.database_service().connection_pool(),
+        [this, self = shared_from_this()](boost::mysql::pooled_connection& conn) -> boost::asio::awaitable<void> {
+            // Prepare the statement once
+            boost::mysql::statement stmt = co_await conn->async_prepare_statement(
+                "SELECT * FROM user WHERE user_uid = ?",
+                boost::asio::use_awaitable
+            );
+
+            boost::mysql::static_results<DBUser> results;
+         
+            co_await conn->async_execute(
+                stmt.bind(10),
+                results,
+                boost::asio::use_awaitable
+            );
+
+            if (results.rows().empty()) {
+                co_return;
+            }
+
+            for (const auto& user : results.rows()) {
+                logger_.LogDebug("User2222: {} ({})", user.nickname, user.user_uid);
+            }
+        },
+        [this, self = shared_from_this()](const std::exception& e) {
+            this->Close();
+        }
+    );
+
 }
 
 } // namespace dev::chat_server
