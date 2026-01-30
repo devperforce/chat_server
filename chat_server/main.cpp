@@ -10,6 +10,7 @@
 #include "chat_server/chat/chat_room_selector.h"
 #include "chat_server/chat_server.h"
 #include "chat_server/configs/server_setting.h"
+#include "tests/test_query.h"
 
 using namespace dev;
 using namespace chat_server;
@@ -118,6 +119,13 @@ int main(int argc, char* argv[]) {
     // 서버 시작 조건 체크
     if (!StartupValidator(*logger, server_setting, *db_service).Validate()) {
         LOG_ERROR("[ChatServer] Startup validation failed.");
+        return EXIT_FAILURE;
+    }
+
+    
+    // DB 테스트
+    if (!TestQuery(*db_service).CheckPrepareStatement()) {
+        LOG_ERROR("[ChatServer] CheckPrepareStatement failed.");
         return EXIT_FAILURE;
     }
 

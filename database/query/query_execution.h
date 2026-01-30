@@ -15,37 +15,18 @@ class ILogger;
 
 namespace dev::database {
 
-
-/*
-template <typename QueryPtr, typename Callback>
-void ExecuteAsync(QueryPtr query, Callback&& callback) {
-    boost::asio::co_spawn(query->get_conn_pool()->get_executor(), 
-        [query, cb = std::forward<Callback>(callback)]() mutable -> boost::asio::awaitable<void> {
-        try {
-            auto conn = co_await query->get_conn_pool()->async_get_connection(boost::asio::use_awaitable);
-            auto result = co_await query->Execute(conn); 
-            cb(result);
-        } catch (const std::exception& e) {
-            query->OnError(e);
-        }
-    }, 
-        boost::asio::detached
-    );
-}
-*/
-
 template <typename ExecuteLogic, typename OnError>
 void ExecuteAsync(
-    std::shared_ptr<boost::mysql::connection_pool> conn_pool,
+    const IQueryContext& query_context,
     ExecuteLogic&& execute_logic,
     OnError&& on_error
 ) {
     //using ReturnType = std::invoke_result_t<ExecuteLogic, boost::mysql::pooled_connection>;
     boost::asio::co_spawn(
-        conn_pool->get_executor(),
-        [conn_pool, 
+        query_context.connection_pool()->get_executor(),
+        [conn_pool =     query_context.connection_pool(), 
          execute_logic = std::forward<ExecuteLogic>(execute_logic),
-         on_error = std::forward<OnError>(on_error)
+         on_error =      std::forward<OnError>(on_error)
         ]() mutable -> boost::asio::awaitable<void> {
         try {
             auto conn = co_await conn_pool->async_get_connection(boost::asio::use_awaitable);
@@ -58,53 +39,116 @@ void ExecuteAsync(
     );
 }
 
-// 콜백의 인자 타입을 분석하여 RowType을 찾아내는 헬퍼
-template <typename T>
-struct extract_row_type;
+// 콜백이 올바른 시그니처인지 확인
+// void(error_code, static_results<T>) 형태인지 검사
+template <typename F, typename RowType>
+concept MysqlStaticCallback = requires(F f, boost::system::error_code ec, boost::mysql::static_results<RowType> res) {
+    { f(ec, std::move(res)) } -> std::same_as<void>;
+};
 
-// 콜백이 void(error_code, static_results<RowType>) 형태일 때 RowType 추출
-template <typename RowType>
-struct extract_row_type<std::function<void(boost::system::error_code, boost::mysql::static_results<RowType>)>> {
-    using type = RowType;
+// 콜백 인자에서 RowType을 추출하기 위한 Helper
+// std::invoke_result는 반환값만 가져오므로, 인자 추출을 위해 traits를 사용
+template <typename T>
+struct callback_traits : callback_traits<decltype(&T::operator())> {};
+
+// 멤버 함수 포인터(람다의 operator())를 위한 특수화
+template <typename C, typename R, typename Arg1, typename RowTypeArg>
+struct callback_traits<R(C::*)(Arg1, boost::mysql::static_results<RowTypeArg>) const> {
+    using row_type = RowTypeArg;
+};
+
+// 일반 함수 포인터를 위한 특수화
+template <typename R, typename Arg1, typename RowTypeArg>
+struct callback_traits<R(*)(Arg1, boost::mysql::static_results<RowTypeArg>)> {
+    using row_type = RowTypeArg;
 };
 
 template <typename... Args, typename Callback>
 void ExecuteAsync(
-    std::shared_ptr<boost::mysql::connection_pool> conn_pool,
+    const IQueryContext& query_context,
     boost::mysql::with_params_t<Args...> bound_params,
     Callback&& callback
 ) {
-    // 람다 함수의 시그니처로부터 RowType을 추론 (traits 활용)
-    // 인자로부터 직접 추론하기 위해 도우미 객체를 생성하거나 타입을 강제합니다.
-    using CallbackType = decltype(std::function(std::forward<Callback>(callback)));
-    using RowType = typename extract_row_type<CallbackType>::type;
+    // RowType 추출 (std::decay_t로 레퍼런스 및 const 제거)
+    using PureCallback = std::remove_cvref_t<Callback>;
+    using RowType = typename callback_traits<PureCallback>::row_type;
 
-    auto executor = conn_pool->get_executor();
+    // Concept을 이용한 컴파일 타임 검증
+    static_assert(MysqlStaticCallback<PureCallback, RowType>, 
+        "Callback signature must be void(error_code, static_results<RowType>)");
 
     auto task = [
-        conn_pool, 
-        bound_params = std::move(bound_params), 
-        callback = std::forward<Callback>(callback)
-    ]() -> boost::asio::awaitable<void> {
+        &logger = query_context.logger(),
+        conn_pool = query_context.connection_pool(), 
+        params = std::move(bound_params), 
+        cb = std::forward<Callback>(callback)
+    ]() mutable -> boost::asio::awaitable<void> {
         boost::mysql::static_results<RowType> results;
-        boost::mysql::diagnostics diag; // diagnostics 객체를 미리 선언
+
+#if defined(_DEBUG) || !defined(NDEBUG)
+        boost::mysql::diagnostics diag;
+#endif
         try {
             auto conn = co_await conn_pool->async_get_connection(boost::asio::use_awaitable);
-            co_await conn->async_execute(bound_params, results, diag, boost::asio::use_awaitable);
 
-            callback(boost::system::error_code(), std::move(results));
+#if defined(_DEBUG) || !defined(NDEBUG)
+            co_await conn->async_execute(params, results, diag, boost::asio::use_awaitable);
+#else
+            co_await conn->async_execute(params, results, boost::asio::use_awaitable);
+#endif
+
+            cb(boost::system::error_code(), std::move(results));
         } catch (const boost::system::system_error& e) {
-            // 여기서 e.code()는 MySQL 에러 코드를 가지고 있습니다.
-            // 상세 서버 메시지가 필요하다면 diag.server_message()를 사용하세요.
-            LOG_ERROR("SQL Error: {}, Server Msg: {}", e.code().message(), diag.server_message());
-            callback(e.code(), std::move(results));
-        } catch (const std::exception& e) {
-            LOG_ERROR("Unknown exception: {}", e.what());
-            callback(make_error_code(boost::system::errc::io_error), std::move(results));
+#if defined(_DEBUG) || !defined(NDEBUG)
+            logger.LogError(std::format(
+                "[ExecuteAsync] Async_execute failed. ec={}, what={}, server_message={}",
+                e.code().message(),
+                e.what(),
+                diag.server_message()
+            ));
+#else
+            logger.LogError(std::format(
+                "[ExecuteAsync] Async_execute failed. ec={}, what={}",
+                e.code().message(),
+                e.what()
+            ));
+#endif
+            cb(e.code(), std::move(results));
+        } catch (const std::exception&) {
+            cb(boost::system::errc::make_error_code(boost::system::errc::io_error), std::move(results));
         }
     };
 
-    boost::asio::co_spawn(executor, std::move(task), boost::asio::detached);
+    boost::asio::co_spawn(query_context.connection_pool()->get_executor(), std::move(task), boost::asio::detached);
+}
+
+
+template <typename _RowType, typename... _Args>
+boost::asio::awaitable<boost::mysql::static_results<_RowType>> ExecuteAsync(
+    const IQueryContext& query_context,
+    boost::mysql::with_params_t<_Args...> bound_params
+) {
+    auto& logger = query_context.logger();
+    auto conn_pool = query_context.connection_pool();
+    boost::mysql::static_results<_RowType> results;
+
+#if defined(_DEBUG) || !defined(NDEBUG)
+    boost::mysql::diagnostics diag;
+#endif
+
+    try {
+        auto conn = co_await conn_pool->async_get_connection(boost::asio::use_awaitable);
+
+#if defined(_DEBUG) || !defined(NDEBUG)
+        co_await conn->async_execute(bound_params, results, diag, boost::asio::use_awaitable);
+#else
+        co_await conn->async_execute(bound_params, results, boost::asio::use_awaitable);
+#endif
+        co_return results;
+
+    } catch (const boost::system::system_error& e) {
+        throw e;
+    }
 }
 
 } // namespace dev::database

@@ -16,41 +16,18 @@ struct DBUser {
 };
 BOOST_DESCRIBE_STRUCT(DBUser, (), (user_uid, nickname))
 
-class GetUserInfoQuery final : public database::QueryAsyncBase<DBUser> {
+class UserQuery : public database::QueryAsyncBase {
 public:
-    GetUserInfoQuery(
-        const database::IQueryContext& context,
-        std::shared_ptr<ChatSession> chat_session
-    ) : QueryAsyncBase(context),
-        chat_session_(std::move(chat_session)) {
+    explicit UserQuery(const database::IQueryContext& query_context)
+        : QueryAsyncBase(query_context) {
     }
-    ~GetUserInfoQuery() = default;
 
-    boost::asio::awaitable<ResultType> Execute(boost::mysql::pooled_connection& conn) override {
-        boost::mysql::statement stmt = co_await conn->async_prepare_statement(
-            "SELECT * FROM user WHERE user_uid = ?",
-            boost::asio::use_awaitable
+    void GetUserInfo(int user_id, std::function<void(boost::system::error_code, boost::mysql::static_results<DBUser>)> callback) {
+        ExecuteAsyncInternal(
+            boost::mysql::with_params("SELECT * FROM user WHERE user_uid = {}", user_id),
+            std::move(callback)
         );
-        boost::mysql::static_results<DBUser> results;
-
-        co_await conn->async_execute(stmt.bind(10), results, boost::asio::use_awaitable);
-
-        for (const auto& user : results.rows()) {
-            const auto user_uid = user.user_uid;
-            const std::u16string utf16_nickname = boost::locale::conv::utf_to_utf<char16_t>(user.nickname);
-            //std::string utf8_nickname = boost::locale::conv::utf_to_utf<char>(utf16_nickname);
-            co_return std::make_shared<DBUser>(user_uid, user.nickname);
-        }
-
-        throw std::runtime_error("User not found");
     }
-
-    void OnError(const std::exception& e) const override {
-        logger_.LogError("[GetUserInfoQuery] Fail to execute query. exception: {}", e.what());
-    }
-
-private:
-    std::shared_ptr<ChatSession> chat_session_;
 };
 
 ChatSession::ChatSession(
@@ -85,7 +62,15 @@ void ChatSession::OnDisconnected(const boost::system::error_code& ec) {
 }
 
 void ChatSession::OnError(const boost::system::error_code& ec) {
-    logger_.LogError("[ChatSession] OnError, {}", ec.what());
+    if (ec == boost::asio::error::eof ||
+        ec == boost::asio::error::connection_reset ||
+        ec == boost::asio::error::operation_aborted) {
+        logger_.LogDebug("[ChatSession] OnError (connection closed), {}", ec.message());
+    } else if (ec.category() == boost::system::system_category()) {
+        logger_.LogWarning("[ChatSession] OnError (system), {} ({})", ec.message(), ec.value());
+    } else {
+        logger_.LogError("[ChatSession] OnError (unexpected), {} ({})", ec.message(), ec.value());
+    }
 }
 
 const ChatServer& ChatSession::chat_server() const {
@@ -129,13 +114,11 @@ void ChatSession::SendPing() {
             return;
         }
 
-
-        // Example async DB usage with correct callback signature; adjust as needed
         DBUser a;
         a.user_uid = 10;
-        database::ExecuteAsync( // <DBUser> 생략 가능!
-            chat_server_.database_service().connection_pool(),
-            boost::mysql::with_params("SELECT * FROM user WHERE user_uid = {}", a.user_uid),
+        database::ExecuteAsync(
+            chat_server_.database_service(),
+            boost::mysql::with_params("SELECT * FROM user2 WHERE user_uid = {}", a.user_uid),
             [this, self = shared_from_this()](boost::system::error_code ec, boost::mysql::static_results<DBUser> results) { // 여기서 타입을 명시
                 if (ec) {
                     logger_.LogError("error_code: {}", ec.what());
@@ -156,35 +139,16 @@ void ChatSession::SendPing() {
     const auto req = std::make_shared<chat::PingReq>();
     Send(req);
 
-    database::ExecuteAsync(
-        chat_server_.database_service().connection_pool(),
-        [this, self = shared_from_this()](boost::mysql::pooled_connection& conn) -> boost::asio::awaitable<void> {
-            // Prepare the statement once
-            boost::mysql::statement stmt = co_await conn->async_prepare_statement(
-                "SELECT * FROM user WHERE user_uid = ?",
-                boost::asio::use_awaitable
-            );
-
-            boost::mysql::static_results<DBUser> results;
-         
-            co_await conn->async_execute(
-                stmt.bind(10),
-                results,
-                boost::asio::use_awaitable
-            );
-
-            if (results.rows().empty()) {
-                co_return;
+    UserQuery(chat_server_.database_service())
+        .GetUserInfo(10, [this, self = shared_from_this()](boost::system::error_code ec, boost::mysql::static_results<DBUser> results) {
+            if (ec) {
+                logger_.LogDebug("[ChatSession] error_code: {}", ec.message());
+                return;
             }
-
             for (const auto& user : results.rows()) {
-                logger_.LogDebug("User2222: {} ({})", user.nickname, user.user_uid);
+                logger_.LogDebug("[ChatSession] User: {} ({})", user.nickname, user.user_uid);
             }
-        },
-        [this, self = shared_from_this()](const std::exception& e) {
-            this->Close();
-        }
-    );
+    });
 
 }
 

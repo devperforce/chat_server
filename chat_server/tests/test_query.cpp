@@ -7,30 +7,44 @@
 
 namespace dev::chat_server {
 
+
+struct TestInfo {
+    int32_t a;
+    float b;
+};
+BOOST_DESCRIBE_STRUCT(TestInfo, (), (a, b))
+
+
 TestQuery::TestQuery(database::IQueryContext& query_context)
     : query_context_(query_context) {
 }
 
-void TestQuery::CheckPrepareStatement() const {
-    /*
-    database::ExecuteAsync(
-        query_context_.connection_pool(),
-        [tag = "test1234"](boost::mysql::pooled_connection& conn) -> boost::asio::awaitable<void> {
-            boost::mysql::statement stmt = co_await conn->async_prepare_statement(
-                "INSERT INTO tracking_play_data (user_uid, tag) VALUES (?, ?)",
-                boost::asio::use_awaitable
-            );
-            boost::mysql::results result;
-            for (int32_t index = 0; index < 10; ++index) {
-                auto user_uid = index;
-                co_await conn->async_execute(stmt.bind(user_uid, tag), result, boost::asio::use_awaitable);
-            }
-        },
-        [&](const std::exception& e) {
-            query_context_.logger().LogError("[TestQuery] Fail to execute prepare statement. exception: {}", e.what());
-        }
+bool TestQuery::CheckPrepareStatement() const {
+    auto params = boost::mysql::with_params("select * from users where id = ?", 1);
+
+    // 1. co_spawn을 통해 awaitable을 future로 변환
+    std::future<boost::mysql::static_results<TestInfo>> fut = boost::asio::co_spawn(
+        query_context_.connection_pool()->get_executor(),
+        ExecuteAsync<TestInfo>(query_context_, params),
+        boost::asio::use_future
     );
-    */
+
+    try {
+        auto results = fut.get();
+        for (const auto& row : results.rows()) {
+            // 비즈니스 로직
+            (void)row;
+        }
+        return true;
+    } catch (const std::exception& e) {
+        query_context_.logger().LogError(
+            "[TestQuery::CheckPrepareStatement] failed with exception. error={}", e.what()
+        );
+        return false;
+    } catch (...) {
+        query_context_.logger().LogError("[TestQuery::CheckPrepareStatement] failed with exception.");
+        return false;
+    }
 }
 
 } // namespace dev::chat_server
