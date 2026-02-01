@@ -11,7 +11,7 @@ class TestQuery : boost::noncopyable {
 public:
     explicit TestQuery(database::IQueryContext& query_context);
 
-    bool CheckPrepareStatement() const;
+    bool CheckExecuteWithParams() const;
 
 
 private:

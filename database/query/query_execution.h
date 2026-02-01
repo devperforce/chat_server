@@ -2,7 +2,6 @@
 
 #include <boost/mysql.hpp>
 #include <boost/asio.hpp>
-#include <memory>
 #include "utility/log.h"
 
 namespace boost::mysql {
@@ -14,6 +13,43 @@ class ILogger;
 } // namespace dev
 
 namespace dev::database {
+
+namespace detail {
+
+template <typename RowType, typename... Args>
+boost::asio::awaitable<boost::mysql::static_results<RowType>> ExecuteAsyncInternal(
+    const IQueryContext& query_context,
+    boost::mysql::with_params_t<Args...> bound_params
+) {
+    auto& logger = query_context.logger();
+    auto conn_pool = query_context.connection_pool();
+    boost::mysql::static_results<RowType> results;
+
+#if defined(_DEBUG) || !defined(NDEBUG)
+    boost::mysql::diagnostics diag;
+#endif
+
+    try {
+        auto conn = co_await conn_pool->async_get_connection(boost::asio::use_awaitable);
+
+#if defined(_DEBUG) || !defined(NDEBUG)
+        co_await conn->async_execute(bound_params, results, diag, boost::asio::use_awaitable);
+#else
+        co_await conn->async_execute(bound_params, results, boost::asio::use_awaitable);
+#endif
+        co_return results;
+    }
+    catch (const boost::system::system_error& e) {
+        logger.LogError(std::format(
+            "[ExecuteAsync] Async_execute failed. ec={}, what={}",
+            e.code().message(),
+            e.what()
+        ));
+        throw e;
+    }
+}
+
+} // namespace detail
 
 template <typename ExecuteLogic, typename OnError>
 void ExecuteAsync(
@@ -119,36 +155,22 @@ void ExecuteAsync(
         }
     };
 
-    boost::asio::co_spawn(query_context.connection_pool()->get_executor(), std::move(task), boost::asio::detached);
+    // 코루인 생성
+    boost::asio::co_spawn(query_context.connection_pool()->get_executor(),
+    std::move(task),
+    boost::asio::detached);
 }
 
-
-template <typename _RowType, typename... _Args>
-boost::asio::awaitable<boost::mysql::static_results<_RowType>> ExecuteAsync(
-    const IQueryContext& query_context,
-    boost::mysql::with_params_t<_Args...> bound_params
+template <class RowType, class Query>
+std::future<boost::mysql::static_results<RowType>> ExecuteAsyncFuture(
+    IQueryContext& query_context,
+    Query&& query
 ) {
-    auto& logger = query_context.logger();
-    auto conn_pool = query_context.connection_pool();
-    boost::mysql::static_results<_RowType> results;
-
-#if defined(_DEBUG) || !defined(NDEBUG)
-    boost::mysql::diagnostics diag;
-#endif
-
-    try {
-        auto conn = co_await conn_pool->async_get_connection(boost::asio::use_awaitable);
-
-#if defined(_DEBUG) || !defined(NDEBUG)
-        co_await conn->async_execute(bound_params, results, diag, boost::asio::use_awaitable);
-#else
-        co_await conn->async_execute(bound_params, results, boost::asio::use_awaitable);
-#endif
-        co_return results;
-
-    } catch (const boost::system::system_error& e) {
-        throw e;
-    }
+    return boost::asio::co_spawn(
+        query_context.connection_pool()->get_executor(),
+        detail::ExecuteAsyncInternal<RowType>(query_context, std::forward<Query>(query)),
+        boost::asio::use_future
+    );
 }
 
 } // namespace dev::database

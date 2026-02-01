@@ -7,42 +7,51 @@
 
 namespace dev::chat_server {
 
-
-struct TestInfo {
-    int32_t a;
-    float b;
+struct UserInfo {
+    std::string nickname;
+    uint64_t gold;
 };
-BOOST_DESCRIBE_STRUCT(TestInfo, (), (a, b))
-
+BOOST_DESCRIBE_STRUCT(UserInfo, (), (nickname, gold))
 
 TestQuery::TestQuery(database::IQueryContext& query_context)
     : query_context_(query_context) {
 }
 
-bool TestQuery::CheckPrepareStatement() const {
-    auto params = boost::mysql::with_params("select * from users where id = ?", 1);
+bool TestQuery::CheckExecuteWithParams() const {
+    const uint64_t test_user_uid = 10;
 
-    // 1. co_spawn을 통해 awaitable을 future로 변환
-    std::future<boost::mysql::static_results<TestInfo>> fut = boost::asio::co_spawn(
-        query_context_.connection_pool()->get_executor(),
-        ExecuteAsync<TestInfo>(query_context_, params),
-        boost::asio::use_future
+    // 테스트 용도로 future를 사용하지만 권장하지 않음
+    auto fut_result = database::ExecuteAsyncFuture<UserInfo>(
+        query_context_,
+        boost::mysql::with_params(
+            "SELECT nickname, gold FROM user WHERE user_uid = {}",
+            test_user_uid
+        )
     );
 
+    const auto& logger = query_context_.logger();
+
     try {
-        auto results = fut.get();
-        for (const auto& row : results.rows()) {
-            // 비즈니스 로직
-            (void)row;
+        if (fut_result.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+            logger.LogError("[TestQuery::CheckPrepareStatement] timed out");
+            return false;
         }
+
+        auto results = fut_result.get();
+        for (const auto& row : results.rows()) {
+            UNREFERENCED_PARAMETER(row);
+        }
+        logger.LogDebug("[TestQuery::CheckPrepareStatement] Passed successfully");
+
         return true;
     } catch (const std::exception& e) {
-        query_context_.logger().LogError(
-            "[TestQuery::CheckPrepareStatement] failed with exception. error={}", e.what()
+        logger.LogError(
+            "[TestQuery::CheckPrepareStatement] Failed with exception. error={}",
+            e.what()
         );
         return false;
     } catch (...) {
-        query_context_.logger().LogError("[TestQuery::CheckPrepareStatement] failed with exception.");
+        logger.LogError("[TestQuery::CheckPrepareStatement] Failed with exception.");
         return false;
     }
 }

@@ -124,8 +124,8 @@ int main(int argc, char* argv[]) {
 
     
     // DB 테스트
-    if (!TestQuery(*db_service).CheckPrepareStatement()) {
-        LOG_ERROR("[ChatServer] CheckPrepareStatement failed.");
+    if (!TestQuery(*db_service).CheckExecuteWithParams()) {
+        LOG_ERROR("[ChatServer] CheckExecuteWithParams failed.");
         return EXIT_FAILURE;
     }
 
